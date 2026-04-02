@@ -1,0 +1,224 @@
+"""ITTAGE — Indirect Target TAGE predictor for XiangShan-pyc.
+
+Like TAGE but stores full target addresses instead of taken/not-taken counters.
+Used for indirect jumps (jalr) whose target varies at runtime.
+Multiple tables with different history lengths; tag matching selects the
+longest-matching table.
+
+Reference: XiangShan/src/main/scala/xiangshan/frontend/bpu/ITTage.scala
+           XiangShan-doc/docs/frontend/bp.md  §ITTAGE
+
+Key features:
+  F-IT-001  Multi-table tagged lookup with geometric history lengths
+  F-IT-002  Each entry stores a predicted target address
+  F-IT-003  Longest-match provides final target prediction
+  F-IT-004  Useful-bit replacement policy with periodic reset
+  F-IT-005  Allocation on misprediction for longer-history tables
+"""
+from __future__ import annotations
+
+import math
+import sys
+from pathlib import Path
+
+_XS_ROOT = Path(__file__).resolve().parent.parent.parent
+if str(_XS_ROOT) not in sys.path:
+    sys.path.insert(0, str(_XS_ROOT))
+
+from pycircuit import (
+    CycleAwareCircuit,
+    CycleAwareDomain,
+    CycleAwareSignal,
+    cas,
+    compile_cycle_aware,
+    mux,
+    u,
+)
+
+from top.parameters import PC_WIDTH, ITTAGE_TAG_WIDTH
+
+SMALL_ITTAGE_TABLE_INFOS = [
+    (32, 4),
+    (32, 8),
+    (64, 16),
+    (64, 32),
+]
+
+ITTAGE_USEFUL_WIDTH = 1
+
+
+def build_ittage(
+    m: CycleAwareCircuit,
+    domain: CycleAwareDomain,
+    *,
+    table_infos: list[tuple[int, int]] = SMALL_ITTAGE_TABLE_INFOS,
+    tag_width: int = ITTAGE_TAG_WIDTH,
+    useful_width: int = ITTAGE_USEFUL_WIDTH,
+    pc_width: int = PC_WIDTH,
+) -> None:
+    """ITTAGE: indirect target predictor with tagged geometric history tables."""
+    num_tables = len(table_infos)
+    useful_max = (1 << useful_width) - 1
+    hist_len_max = max(hl for _, hl in table_infos)
+    hist_w = hist_len_max
+    prov_id_w = max(1, math.ceil(math.log2(num_tables + 1)))
+
+    # ── Cycle 0: Inputs ──────────────────────────────────────────────
+    s0_fire = cas(domain, m.input("s0_fire", width=1), cycle=0)
+    s0_pc = cas(domain, m.input("s0_pc", width=pc_width), cycle=0)
+    global_hist = cas(domain, m.input("global_hist", width=hist_w), cycle=0)
+
+    train_valid = cas(domain, m.input("train_valid", width=1), cycle=0)
+    train_pc = cas(domain, m.input("train_pc", width=pc_width), cycle=0)
+    train_hist = cas(domain, m.input("train_hist", width=hist_w), cycle=0)
+    train_target = cas(domain, m.input("train_target", width=pc_width), cycle=0)
+    train_mispred = cas(domain, m.input("train_mispred", width=1), cycle=0)
+    train_provider_id = cas(domain, m.input("train_provider_id", width=prov_id_w), cycle=0)
+    train_provider_valid = cas(domain, m.input("train_provider_valid", width=1), cycle=0)
+
+    zero1 = cas(domain, m.const(0, width=1), cycle=0)
+    one1 = cas(domain, m.const(1, width=1), cycle=0)
+    zero_pc = cas(domain, m.const(0, width=pc_width), cycle=0)
+
+    # ── Table storage ────────────────────────────────────────────────
+    tbl_entry_valid = []
+    tbl_entry_tag = []
+    tbl_entry_target = []
+    tbl_entry_useful = []
+
+    for t_idx, (tbl_size, _hl) in enumerate(table_infos):
+        ev = [domain.state(width=1, reset_value=0, name=f"it{t_idx}_v_{i}") for i in range(tbl_size)]
+        etag = [domain.state(width=tag_width, reset_value=0, name=f"it{t_idx}_tag_{i}") for i in range(tbl_size)]
+        etar = [domain.state(width=pc_width, reset_value=0, name=f"it{t_idx}_tar_{i}") for i in range(tbl_size)]
+        euse = [domain.state(width=useful_width, reset_value=0, name=f"it{t_idx}_u_{i}") for i in range(tbl_size)]
+        tbl_entry_valid.append(ev)
+        tbl_entry_tag.append(etag)
+        tbl_entry_target.append(etar)
+        tbl_entry_useful.append(euse)
+
+    # ── Lookup: per-table index/tag, find longest match ──────────────
+    tbl_hit = []
+    tbl_target = []
+
+    for t_idx, (tbl_size, hist_len) in enumerate(table_infos):
+        idx_w = max(1, math.ceil(math.log2(tbl_size)))
+        folded = global_hist[0:idx_w]
+        pc_bits = s0_pc[1:1 + idx_w]
+        tbl_index = cas(domain, (pc_bits.wire ^ folded.wire)[0:idx_w], cycle=0)
+
+        tag_hist = global_hist[0:tag_width]
+        pc_tag_bits = s0_pc[1:1 + tag_width]
+        tbl_tag_comp = cas(domain, (pc_tag_bits.wire ^ tag_hist.wire)[0:tag_width], cycle=0)
+
+        ev = tbl_entry_valid[t_idx]
+        etag = tbl_entry_tag[t_idx]
+        etar = tbl_entry_target[t_idx]
+
+        rd_hit = cas(domain, m.const(0, width=1), cycle=0)
+        rd_target = zero_pc
+        for j in range(tbl_size):
+            idx_hit = tbl_index == cas(domain, m.const(j, width=idx_w), cycle=0)
+            e_v = cas(domain, ev[j].wire, cycle=0)
+            e_tag = cas(domain, etag[j].wire, cycle=0)
+            e_tar = cas(domain, etar[j].wire, cycle=0)
+            tag_match = e_tag == tbl_tag_comp
+            entry_hit = idx_hit & e_v & tag_match
+            rd_hit = mux(entry_hit, one1, rd_hit)
+            rd_target = mux(entry_hit, e_tar, rd_target)
+
+        tbl_hit.append(rd_hit)
+        tbl_target.append(rd_target)
+
+    # Longest match selection
+    provider_valid = zero1
+    provider_target = zero_pc
+    provider_id = cas(domain, m.const(0, width=prov_id_w), cycle=0)
+
+    for t_idx in range(num_tables):
+        is_hit = tbl_hit[t_idx]
+        provider_target = mux(is_hit, tbl_target[t_idx], provider_target)
+        provider_valid = mux(is_hit, one1, provider_valid)
+        provider_id = mux(is_hit, cas(domain, m.const(t_idx + 1, width=prov_id_w), cycle=0), provider_id)
+
+    pred_valid = s0_fire & provider_valid
+    m.output("pred_valid", pred_valid.wire)
+    m.output("pred_target", provider_target.wire)
+    m.output("provider_valid", provider_valid.wire)
+    m.output("provider_id", provider_id.wire)
+
+    # ── Tick counter for periodic useful reset ───────────────────────
+    tick_r = domain.state(width=8, reset_value=0, name="it_tick")
+    tick_val = cas(domain, tick_r.wire, cycle=0)
+    tick_overflow = tick_val == cas(domain, m.const(255, width=8), cycle=0)
+
+    # ── domain.next() → Cycle 1: Training ────────────────────────────
+    domain.next()
+
+    for t_idx, (tbl_size, hist_len) in enumerate(table_infos):
+        idx_w = max(1, math.ceil(math.log2(tbl_size)))
+        t_folded = train_hist[0:idx_w]
+        t_pc_bits = train_pc[1:1 + idx_w]
+        t_index = cas(domain, (t_pc_bits.wire ^ t_folded.wire)[0:idx_w], cycle=0)
+
+        t_tag_hist = train_hist[0:tag_width]
+        t_pc_tag = train_pc[1:1 + tag_width]
+        t_tag = cas(domain, (t_pc_tag.wire ^ t_tag_hist.wire)[0:tag_width], cycle=0)
+
+        is_provider = train_provider_valid & (train_provider_id == cas(domain, m.const(t_idx + 1, width=prov_id_w), cycle=0))
+
+        ev = tbl_entry_valid[t_idx]
+        etag = tbl_entry_tag[t_idx]
+        etar = tbl_entry_target[t_idx]
+        euse = tbl_entry_useful[t_idx]
+
+        for j in range(tbl_size):
+            idx_hit = t_index == cas(domain, m.const(j, width=idx_w), cycle=0)
+            e_v = cas(domain, ev[j].wire, cycle=0)
+            e_tag = cas(domain, etag[j].wire, cycle=0)
+            e_tar = cas(domain, etar[j].wire, cycle=0)
+            e_u = cas(domain, euse[j].wire, cycle=0)
+            tag_match = e_tag == t_tag
+
+            # Provider hit: update target
+            we_update = train_valid & is_provider & idx_hit & e_v & tag_match
+            etar[j].set(mux(we_update, train_target, e_tar), when=we_update)
+
+            # Useful update: correct prediction → inc, wrong → dec
+            target_correct = e_tar == train_target
+            u_inc = mux(e_u == cas(domain, m.const(useful_max, width=useful_width), cycle=0),
+                        e_u,
+                        cas(domain, (e_u.wire + u(useful_width, 1))[0:useful_width], cycle=0))
+            u_dec = mux(e_u == cas(domain, m.const(0, width=useful_width), cycle=0),
+                        e_u,
+                        cas(domain, (e_u.wire - u(useful_width, 1))[0:useful_width], cycle=0))
+            new_u = mux(target_correct, u_inc, u_dec)
+            we_useful = train_valid & is_provider & idx_hit & e_v & tag_match
+            euse[j].set(mux(we_useful, new_u, e_u), when=we_useful)
+
+            # Allocation on misprediction into longer-history tables
+            is_alloc = (train_provider_id < cas(domain, m.const(t_idx + 1, width=prov_id_w), cycle=0))
+            we_alloc = train_valid & train_mispred & idx_hit & is_alloc & \
+                       ((~e_v) | (e_u == cas(domain, m.const(0, width=useful_width), cycle=0)))
+            ev[j].set(mux(we_alloc, one1, ev[j]), when=we_alloc)
+            etag[j].set(mux(we_alloc, t_tag, etag[j]), when=we_alloc)
+            etar[j].set(mux(we_alloc, train_target, etar[j]), when=we_alloc)
+            euse[j].set(mux(we_alloc, cas(domain, m.const(0, width=useful_width), cycle=0), euse[j]), when=we_alloc)
+
+            # Periodic useful reset
+            euse[j].set(cas(domain, m.const(0, width=useful_width), cycle=0), when=tick_overflow)
+
+    # Tick counter update
+    next_tick = mux(tick_overflow,
+                    cas(domain, m.const(0, width=8), cycle=0),
+                    cas(domain, (tick_val.wire + u(8, 1))[0:8], cycle=0))
+    tick_r.set(mux(train_valid & train_mispred, next_tick, tick_val))
+
+
+build_ittage.__pycircuit_name__ = "ittage"
+
+
+if __name__ == "__main__":
+    print(compile_cycle_aware(
+        build_ittage, name="ittage", eager=True,
+        table_infos=SMALL_ITTAGE_TABLE_INFOS,
+    ).emit_mlir())

@@ -1,0 +1,308 @@
+"""TAGE — TAgged GEometric history length branch predictor for XiangShan-pyc.
+
+Multi-table tagged predictor where each table uses a different global history
+length (geometric series).  A base predictor (PC-indexed 2-bit counters) serves
+as fallback when no tagged table matches.
+
+Prediction: the longest-matching tagged table provides the prediction.
+Update: saturating counters are incremented/decremented; entries are allocated
+on misprediction using the useful-bit mechanism.
+
+Reference: XiangShan/src/main/scala/xiangshan/frontend/bpu/Tage.scala
+           XiangShan-doc/docs/frontend/bp.md  §TAGE-SC
+
+Key features:
+  F-TG-001  Base predictor (PC-indexed bimodal table)
+  F-TG-002  Multiple tagged tables with geometric history lengths
+  F-TG-003  Longest-match prediction with USE_ALT_ON_NA fallback
+  F-TG-004  Saturating useful counters for replacement policy
+  F-TG-005  Training: counter update + allocation on misprediction
+  F-TG-006  Periodic useful-bit reset via tick counter
+"""
+from __future__ import annotations
+
+import math
+import sys
+from pathlib import Path
+
+_XS_ROOT = Path(__file__).resolve().parent.parent.parent
+if str(_XS_ROOT) not in sys.path:
+    sys.path.insert(0, str(_XS_ROOT))
+
+from pycircuit import (
+    CycleAwareCircuit,
+    CycleAwareDomain,
+    CycleAwareSignal,
+    cas,
+    compile_cycle_aware,
+    mux,
+    u,
+)
+
+from top.parameters import PC_WIDTH
+
+SMALL_TAGE_TABLE_INFOS = [
+    (64, 6),
+    (64, 12),
+    (128, 17),
+    (128, 31),
+]
+
+BASE_TABLE_SIZE = 256
+CTR_WIDTH = 3
+TAG_WIDTH = 8
+USEFUL_WIDTH = 1
+
+
+def build_tage(
+    m: CycleAwareCircuit,
+    domain: CycleAwareDomain,
+    *,
+    table_infos: list[tuple[int, int]] = SMALL_TAGE_TABLE_INFOS,
+    base_size: int = BASE_TABLE_SIZE,
+    ctr_width: int = CTR_WIDTH,
+    tag_width: int = TAG_WIDTH,
+    useful_width: int = USEFUL_WIDTH,
+    pc_width: int = PC_WIDTH,
+    num_br: int = 2,
+) -> None:
+    """TAGE: tagged geometric history length branch direction predictor."""
+    num_tables = len(table_infos)
+    base_idx_w = max(1, math.ceil(math.log2(base_size)))
+    ctr_max = (1 << ctr_width) - 1
+    ctr_weak_taken = (1 << (ctr_width - 1))
+    ctr_weak_ntaken = ctr_weak_taken - 1
+    useful_max = (1 << useful_width) - 1
+
+    hist_len_max = max(hl for _, hl in table_infos)
+    hist_w = hist_len_max
+
+    # ── Cycle 0: Inputs ──────────────────────────────────────────────
+    s0_fire = cas(domain, m.input("s0_fire", width=1), cycle=0)
+    s0_pc = cas(domain, m.input("s0_pc", width=pc_width), cycle=0)
+    global_hist = cas(domain, m.input("global_hist", width=hist_w), cycle=0)
+
+    train_valid = cas(domain, m.input("train_valid", width=1), cycle=0)
+    train_pc = cas(domain, m.input("train_pc", width=pc_width), cycle=0)
+    train_hist = cas(domain, m.input("train_hist", width=hist_w), cycle=0)
+    train_taken_0 = cas(domain, m.input("train_taken_0", width=1), cycle=0)
+    train_taken_1 = cas(domain, m.input("train_taken_1", width=1), cycle=0)
+    train_mispred_0 = cas(domain, m.input("train_mispred_0", width=1), cycle=0)
+    train_mispred_1 = cas(domain, m.input("train_mispred_1", width=1), cycle=0)
+    train_provider_id = cas(domain, m.input("train_provider_id", width=max(1, math.ceil(math.log2(num_tables + 1)))), cycle=0)
+    train_provider_valid = cas(domain, m.input("train_provider_valid", width=1), cycle=0)
+    train_alt_differs = cas(domain, m.input("train_alt_differs", width=1), cycle=0)
+
+    zero1 = cas(domain, m.const(0, width=1), cycle=0)
+    one1 = cas(domain, m.const(1, width=1), cycle=0)
+
+    # ── Base predictor (bimodal) ─────────────────────────────────────
+    base_ctr = [domain.state(width=ctr_width, reset_value=ctr_weak_taken, name=f"base_{i}")
+                for i in range(base_size)]
+
+    base_idx = s0_pc[1:1 + base_idx_w]
+    base_val_0 = cas(domain, m.const(0, width=ctr_width), cycle=0)
+    for j in range(base_size):
+        hit = base_idx == cas(domain, m.const(j, width=base_idx_w), cycle=0)
+        base_val_0 = mux(hit, cas(domain, base_ctr[j].wire, cycle=0), base_val_0)
+
+    base_pred_0 = base_val_0[ctr_width - 1:ctr_width]
+
+    # ── Tagged tables storage ────────────────────────────────────────
+    tbl_entry_valid = []
+    tbl_entry_tag = []
+    tbl_entry_ctr = []
+    tbl_entry_useful = []
+
+    for t_idx, (tbl_size, _hist_len) in enumerate(table_infos):
+        ev = [domain.state(width=1, reset_value=0, name=f"t{t_idx}_v_{i}") for i in range(tbl_size)]
+        etag = [domain.state(width=tag_width, reset_value=0, name=f"t{t_idx}_tag_{i}") for i in range(tbl_size)]
+        ectr = [domain.state(width=ctr_width, reset_value=ctr_weak_taken, name=f"t{t_idx}_ctr_{i}") for i in range(tbl_size)]
+        euse = [domain.state(width=useful_width, reset_value=0, name=f"t{t_idx}_u_{i}") for i in range(tbl_size)]
+        tbl_entry_valid.append(ev)
+        tbl_entry_tag.append(etag)
+        tbl_entry_ctr.append(ectr)
+        tbl_entry_useful.append(euse)
+
+    # ── Lookup: compute index/tag per table, find longest match ──────
+    tbl_hit = []
+    tbl_ctr_val = []
+    tbl_pred = []
+
+    for t_idx, (tbl_size, hist_len) in enumerate(table_infos):
+        idx_w = max(1, math.ceil(math.log2(tbl_size)))
+        folded_hist = global_hist[0:idx_w]
+        pc_bits = s0_pc[1:1 + idx_w]
+        tbl_index = cas(domain, (pc_bits.wire ^ folded_hist.wire)[0:idx_w], cycle=0)
+
+        tag_hist = global_hist[0:tag_width]
+        pc_tag_bits = s0_pc[1:1 + tag_width]
+        tbl_tag_computed = cas(domain, (pc_tag_bits.wire ^ tag_hist.wire)[0:tag_width], cycle=0)
+
+        ev = tbl_entry_valid[t_idx]
+        etag = tbl_entry_tag[t_idx]
+        ectr = tbl_entry_ctr[t_idx]
+
+        rd_valid = cas(domain, m.const(0, width=1), cycle=0)
+        rd_ctr = cas(domain, m.const(0, width=ctr_width), cycle=0)
+        for j in range(tbl_size):
+            idx_hit = tbl_index == cas(domain, m.const(j, width=idx_w), cycle=0)
+            e_v = cas(domain, ev[j].wire, cycle=0)
+            e_tag = cas(domain, etag[j].wire, cycle=0)
+            e_ctr = cas(domain, ectr[j].wire, cycle=0)
+            tag_match = e_tag == tbl_tag_computed
+            entry_hit = idx_hit & e_v & tag_match
+            rd_valid = mux(entry_hit, one1, rd_valid)
+            rd_ctr = mux(entry_hit, e_ctr, rd_ctr)
+
+        tbl_hit.append(rd_valid)
+        tbl_ctr_val.append(rd_ctr)
+        tbl_pred.append(rd_ctr[ctr_width - 1:ctr_width])
+
+    # Longest match: iterate from highest history length to lowest
+    provider_valid = zero1
+    provider_pred = base_pred_0
+    provider_ctr = cas(domain, m.const(0, width=ctr_width), cycle=0)
+    prov_id_w = max(1, math.ceil(math.log2(num_tables + 1)))
+    provider_id = cas(domain, m.const(0, width=prov_id_w), cycle=0)
+    alt_pred = base_pred_0
+
+    for t_idx in range(num_tables):
+        is_hit = tbl_hit[t_idx]
+        new_pred = tbl_pred[t_idx]
+        alt_pred = mux(is_hit, provider_pred, alt_pred)
+        provider_pred = mux(is_hit, new_pred, provider_pred)
+        provider_ctr = mux(is_hit, tbl_ctr_val[t_idx], provider_ctr)
+        provider_valid = mux(is_hit, one1, provider_valid)
+        provider_id = mux(is_hit, cas(domain, m.const(t_idx + 1, width=prov_id_w), cycle=0), provider_id)
+
+    # USE_ALT_ON_NA: use alt prediction when provider counter is weak
+    use_alt_r = domain.state(width=4, reset_value=8, name="use_alt_cnt")
+    use_alt_val = cas(domain, use_alt_r.wire, cycle=0)
+    use_alt = use_alt_val[3:4]
+
+    ctr_is_weak = (provider_ctr == cas(domain, m.const(ctr_weak_taken, width=ctr_width), cycle=0)) | \
+                  (provider_ctr == cas(domain, m.const(ctr_weak_ntaken, width=ctr_width), cycle=0))
+    do_use_alt = use_alt & ctr_is_weak & provider_valid
+
+    final_pred = mux(provider_valid, provider_pred, base_pred_0)
+    final_pred = mux(do_use_alt, alt_pred, final_pred)
+
+    pred_valid = s0_fire
+    m.output("pred_taken_0", (pred_valid & final_pred).wire)
+    m.output("pred_taken_1", zero1.wire)
+    m.output("provider_valid", provider_valid.wire)
+    m.output("provider_id", provider_id.wire)
+    m.output("alt_differs", cas(domain, (alt_pred.wire ^ provider_pred.wire)[0:1], cycle=0).wire)
+
+    # ── Tick counter for periodic useful reset ───────────────────────
+    tick_r = domain.state(width=8, reset_value=0, name="tick")
+    tick_val = cas(domain, tick_r.wire, cycle=0)
+    tick_max = cas(domain, m.const(255, width=8), cycle=0)
+    tick_overflow = tick_val == tick_max
+
+    # ── domain.next() → Cycle 1: Training updates ───────────────────
+    domain.next()
+
+    # Base predictor update
+    t_base_idx = train_pc[1:1 + base_idx_w]
+    for j in range(base_size):
+        idx_hit = t_base_idx == cas(domain, m.const(j, width=base_idx_w), cycle=0)
+        we = train_valid & idx_hit & (~train_provider_valid)
+        old_ctr = cas(domain, base_ctr[j].wire, cycle=0)
+        inc = mux(old_ctr == cas(domain, m.const(ctr_max, width=ctr_width), cycle=0),
+                  old_ctr,
+                  cas(domain, (old_ctr.wire + u(ctr_width, 1))[0:ctr_width], cycle=0))
+        dec = mux(old_ctr == cas(domain, m.const(0, width=ctr_width), cycle=0),
+                  old_ctr,
+                  cas(domain, (old_ctr.wire - u(ctr_width, 1))[0:ctr_width], cycle=0))
+        new_ctr = mux(train_taken_0, inc, dec)
+        base_ctr[j].set(mux(we, new_ctr, old_ctr), when=we)
+
+    # Tagged table counter + useful update
+    for t_idx, (tbl_size, hist_len) in enumerate(table_infos):
+        idx_w = max(1, math.ceil(math.log2(tbl_size)))
+        t_folded = train_hist[0:idx_w]
+        t_pc_bits = train_pc[1:1 + idx_w]
+        t_index = cas(domain, (t_pc_bits.wire ^ t_folded.wire)[0:idx_w], cycle=0)
+
+        t_tag_hist = train_hist[0:tag_width]
+        t_pc_tag = train_pc[1:1 + tag_width]
+        t_tag = cas(domain, (t_pc_tag.wire ^ t_tag_hist.wire)[0:tag_width], cycle=0)
+
+        is_provider = train_provider_valid & (train_provider_id == cas(domain, m.const(t_idx + 1, width=prov_id_w), cycle=0))
+
+        ev = tbl_entry_valid[t_idx]
+        etag = tbl_entry_tag[t_idx]
+        ectr = tbl_entry_ctr[t_idx]
+        euse = tbl_entry_useful[t_idx]
+
+        for j in range(tbl_size):
+            idx_hit = t_index == cas(domain, m.const(j, width=idx_w), cycle=0)
+            e_v = cas(domain, ev[j].wire, cycle=0)
+            e_tag = cas(domain, etag[j].wire, cycle=0)
+            e_ctr = cas(domain, ectr[j].wire, cycle=0)
+            e_u = cas(domain, euse[j].wire, cycle=0)
+            tag_match = e_tag == t_tag
+
+            we_update = train_valid & is_provider & idx_hit & e_v & tag_match
+
+            inc_c = mux(e_ctr == cas(domain, m.const(ctr_max, width=ctr_width), cycle=0),
+                        e_ctr,
+                        cas(domain, (e_ctr.wire + u(ctr_width, 1))[0:ctr_width], cycle=0))
+            dec_c = mux(e_ctr == cas(domain, m.const(0, width=ctr_width), cycle=0),
+                        e_ctr,
+                        cas(domain, (e_ctr.wire - u(ctr_width, 1))[0:ctr_width], cycle=0))
+            new_c = mux(train_taken_0, inc_c, dec_c)
+            ectr[j].set(mux(we_update, new_c, e_ctr), when=we_update)
+
+            useful_inc = mux(e_u == cas(domain, m.const(useful_max, width=useful_width), cycle=0),
+                             e_u,
+                             cas(domain, (e_u.wire + u(useful_width, 1))[0:useful_width], cycle=0))
+            useful_dec = mux(e_u == cas(domain, m.const(0, width=useful_width), cycle=0),
+                             e_u,
+                             cas(domain, (e_u.wire - u(useful_width, 1))[0:useful_width], cycle=0))
+            we_useful = train_valid & is_provider & idx_hit & e_v & tag_match & train_alt_differs
+            new_u = mux(~train_mispred_0, useful_inc, useful_dec)
+            euse[j].set(mux(we_useful, new_u, e_u), when=we_useful)
+
+            # Allocation on misprediction: find first table with unused entry
+            is_alloc_candidate = (train_provider_id < cas(domain, m.const(t_idx + 1, width=prov_id_w), cycle=0))
+            we_alloc = train_valid & train_mispred_0 & idx_hit & is_alloc_candidate & \
+                       ((~e_v) | (e_u == cas(domain, m.const(0, width=useful_width), cycle=0)))
+            new_alloc_ctr = cas(domain, m.const(ctr_weak_taken if True else ctr_weak_ntaken, width=ctr_width), cycle=0)
+            ev[j].set(mux(we_alloc, one1, ev[j]), when=we_alloc)
+            etag[j].set(mux(we_alloc, t_tag, etag[j]), when=we_alloc)
+            ectr[j].set(mux(we_alloc, mux(train_taken_0, new_alloc_ctr, cas(domain, m.const(ctr_weak_ntaken, width=ctr_width), cycle=0)), ectr[j]), when=we_alloc)
+            euse[j].set(mux(we_alloc, cas(domain, m.const(0, width=useful_width), cycle=0), euse[j]), when=we_alloc)
+
+            # Periodic useful reset
+            euse[j].set(cas(domain, m.const(0, width=useful_width), cycle=0), when=tick_overflow)
+
+    # USE_ALT_ON_NA counter update
+    ua_inc = mux(use_alt_val == cas(domain, m.const(15, width=4), cycle=0),
+                 use_alt_val,
+                 cas(domain, (use_alt_val.wire + u(4, 1))[0:4], cycle=0))
+    ua_dec = mux(use_alt_val == cas(domain, m.const(0, width=4), cycle=0),
+                 use_alt_val,
+                 cas(domain, (use_alt_val.wire - u(4, 1))[0:4], cycle=0))
+    ua_we = train_valid & train_provider_valid & train_alt_differs
+    new_ua = mux(train_mispred_0, ua_inc, ua_dec)
+    use_alt_r.set(mux(ua_we, new_ua, use_alt_val))
+
+    # Tick counter
+    next_tick = mux(tick_overflow,
+                    cas(domain, m.const(0, width=8), cycle=0),
+                    cas(domain, (tick_val.wire + u(8, 1))[0:8], cycle=0))
+    tick_r.set(mux(train_valid & train_mispred_0, next_tick, tick_val))
+
+
+build_tage.__pycircuit_name__ = "tage"
+
+
+if __name__ == "__main__":
+    print(compile_cycle_aware(
+        build_tage, name="tage", eager=True,
+        table_infos=SMALL_TAGE_TABLE_INFOS,
+        base_size=BASE_TABLE_SIZE,
+    ).emit_mlir())

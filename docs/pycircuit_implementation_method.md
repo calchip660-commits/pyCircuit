@@ -83,7 +83,7 @@ Mirror the **directory layout** (design file + `tb_*.py` + optional `README.md`)
 
 ## From converted Markdown to feature list, step docs, and test plan
 
-**Purpose:** Once normative inputs live as **`.md`** under the block (typically `designs/<Block>/docs/converted/`), this subsection defines how to **propagate** that text into **`FEATURE_LIST`**, optional **per-step markdown** (`step1.md` … `step10.md`), **`TRACEABILITY`**, and **`TEST_PLAN`** so agents and reviewers share one chain of evidence. **`designs/CSU/docs/`** is a **reference layout** (e.g. `feature_list.md`, `workflow_substeps.md`, `run_csu_verification.py`).
+**Purpose:** Once normative inputs live as **`.md`** under the block (typically `designs/<Block>/docs/converted/`), this subsection defines how to **propagate** that text into **`FEATURE_LIST`**, optional **per-step markdown** (`step1.md` … `step10.md`), **`TRACEABILITY`**, and **`TEST_PLAN`** so agents and reviewers share one chain of evidence. A completed block under **`designs/`** can serve as a **reference layout** (e.g. `feature_list.md`, `workflow_substeps.md`, `run_<block>_verification.py`).
 
 ### 1. End-to-end pipeline (recommended order)
 
@@ -116,7 +116,7 @@ Spreadsheet-derived behavior (opcodes, field maps) should cite the **specific** 
 
 ### 3. Block `step1.md` … `step10.md` (optional but recommended)
 
-For complex blocks, mirror this repository’s **10-step** narrative in **block-local** files so CSU-specific rules (converted paths, **F-xxx** ranges, **heading checklist**, **cycle_budget**, **workflow_substeps**) do not clutter the generic steps above. Each `stepN.md` should:
+For complex blocks, mirror this repository’s **10-step** narrative in **block-local** files so block-specific rules (converted paths, **F-xxx** ranges, **heading checklist**, **cycle_budget**, **workflow_substeps**) do not clutter the generic steps above. Each `stepN.md` should:
 
 - Point to **`docs/converted/`** and the **regenerate** command.  
 - State which **F-xxx** band or **checklist** rows that step owns or reviews.  
@@ -125,7 +125,7 @@ For complex blocks, mirror this repository’s **10-step** narrative in **block-
 ### 4. Tests and automation
 
 - **Directed tests:** at least one **regression-sensitive** case per **F-xxx** before milestone close; build opcode / flit matrices from **Markdown tables** in `converted/` where possible.  
-- **Block runner:** optional `run_<block>_verification.py` that executes **stdlib** checks: digests present, key markdown sections exist, `emit_mlir()` or compile smoke, width/contract assertions — see **`designs/CSU/run_csu_verification.py`**.  
+- **Block runner:** optional `run_<block>_verification.py` that executes **stdlib** checks: digests present, key markdown sections exist, `emit_mlir()` or compile smoke, width/contract assertions.  
 - **pytest:** optional `test_<block>_steps.py` with markers `step1` … `step10` mirroring the same checks.
 
 ### 5. Relation to the generic Steps 2–10 below
@@ -136,7 +136,7 @@ For complex blocks, mirror this repository’s **10-step** narrative in **block-
 
 ## Step 2 — Read all block-specific requirement documents
 
-**Goal:** Load every normative input for **this** block (for CSU: everything under `designs/CSU/docs/`, including PDF/XLSX/DOCX **after** they have been converted to Markdown per the section above).
+**Goal:** Load every normative input for **this** block (i.e. everything under the block's `docs/` folder, including PDF/XLSX/DOCX **after** they have been converted to Markdown per the section above).
 
 **Actions:**
 
@@ -277,10 +277,11 @@ For complex blocks, mirror this repository’s **10-step** narrative in **block-
 
 ---
 
-## Relationship to CSU and other blocks
+## Relationship to block-specific projects
 
-- For **CSU**, block-specific specs live under `designs/CSU/docs/`. Start Step 2 there after Step 1, **after** any **DOCX/PDF/XLSX → Markdown** conversion for files you will analyze in depth. The **full** worked example of **From converted Markdown to feature list, step docs, and test plan** (including **heading checklist**, **`workflow_substeps.md`**, **`cycle_budget.md`**, and **`run_csu_verification.py`**) lives beside that tree.
-- For other blocks, substitute the appropriate `designs/<Block>/docs/` (or project doc root) and reuse the same artifact names where practical.
+- For any block, block-specific specs live under `designs/<Block>/docs/`. Start Step 2 there after Step 1, **after** any **DOCX/PDF/XLSX → Markdown** conversion for files you will analyze in depth.
+- Existing completed blocks under `designs/` can serve as worked examples of the **From converted Markdown to feature list, step docs, and test plan** pipeline (including **heading checklist**, **`workflow_substeps.md`**, **`cycle_budget.md`**, and **`run_<block>_verification.py`**).
+- For new blocks, substitute the appropriate `designs/<Block>/docs/` (or project doc root) and reuse the same artifact names where practical.
 
 ## Relationship to repository policy
 

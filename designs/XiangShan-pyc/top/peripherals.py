@@ -1,0 +1,205 @@
+"""SoC Peripheral stubs — PLIC and CLINT for XiangShan-pyc.
+
+Simplified placeholder models for Platform-Level Interrupt Controller (PLIC)
+and Core Local Interruptor (CLINT).  These provide the minimum port interface
+for SoC integration without full protocol logic.
+
+Reference:
+  - RISC-V PLIC Specification v1.0
+  - RISC-V Privileged Architecture (CLINT memory-mapped registers)
+
+Key features:
+  SOC-PLIC-001  Interrupt gateway: N source inputs → priority arbitration → target output
+  SOC-PLIC-002  Claim/complete handshake (simplified to single-cycle)
+  SOC-CLINT-001 Machine timer interrupt (mtip) based on mtime >= mtimecmp
+  SOC-CLINT-002 Machine software interrupt (msip) via memory-mapped write
+"""
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+_XS_ROOT = Path(__file__).resolve().parent.parent
+if str(_XS_ROOT) not in sys.path:
+    sys.path.insert(0, str(_XS_ROOT))
+
+from pycircuit import (
+    CycleAwareCircuit,
+    CycleAwareDomain,
+    CycleAwareSignal,
+    cas,
+    compile_cycle_aware,
+    mux,
+    u,
+)
+
+from top.parameters import XLEN
+
+PLIC_NUM_SOURCES = 64
+PLIC_NUM_TARGETS = 2
+PLIC_PRIO_WIDTH = 3
+
+CLINT_TIMER_WIDTH = 64
+
+
+# ═══════════════════════════════════════════════════════════════════
+#  PLIC — Platform-Level Interrupt Controller (stub)
+# ═══════════════════════════════════════════════════════════════════
+
+def build_plic(
+    m: CycleAwareCircuit,
+    domain: CycleAwareDomain,
+    *,
+    num_sources: int = PLIC_NUM_SOURCES,
+    num_targets: int = PLIC_NUM_TARGETS,
+    prio_width: int = PLIC_PRIO_WIDTH,
+) -> None:
+    """PLIC stub: priority-based interrupt routing from sources to targets."""
+
+    src_id_w = max(1, (num_sources - 1).bit_length())
+
+    # ── Cycle 0: Inputs ──────────────────────────────────────────
+    irq_pending = cas(domain, m.input("irq_pending", width=num_sources), cycle=0)
+    irq_enable  = cas(domain, m.input("irq_enable", width=num_sources), cycle=0)
+
+    claim_valid = cas(domain, m.input("claim_valid", width=1), cycle=0)
+    complete_valid = cas(domain, m.input("complete_valid", width=1), cycle=0)
+    complete_id = cas(domain, m.input("complete_id", width=src_id_w), cycle=0)
+
+    threshold = cas(domain, m.input("threshold", width=prio_width), cycle=0)
+
+    # ── State ────────────────────────────────────────────────────
+    claimed = domain.state(width=num_sources, reset_value=0, name="claimed")
+
+    # Per-source priority (simplified: stored as state, writable)
+    src_prio = [
+        domain.state(width=prio_width, reset_value=0, name=f"prio_{i}")
+        for i in range(min(num_sources, 8))
+    ]
+
+    # ── Cycle 0: Combinational — find highest-priority pending ───
+    def _const(val, w):
+        return cas(domain, m.const(val, width=w), cycle=0)
+
+    ZERO_1 = _const(0, 1)
+    ONE_1  = _const(1, 1)
+
+    effective_pending = irq_pending & irq_enable & (~claimed)
+
+    # Simple priority scan (lowest index with pending wins — stub)
+    best_id = _const(0, src_id_w)
+    any_irq = ZERO_1
+    for i in range(min(num_sources, 8)):
+        bit_i = effective_pending[i : i + 1]
+        prio_above = src_prio[i] if i < len(src_prio) else _const(1, prio_width)
+        above_thresh = prio_above > threshold if i < len(src_prio) else ONE_1
+        take = bit_i & above_thresh & (~any_irq)
+        best_id = mux(take, _const(i, src_id_w), best_id)
+        any_irq = any_irq | take
+
+    # ── Outputs ──────────────────────────────────────────────────
+    m.output("irq_out", any_irq.wire)
+    m.output("irq_id", best_id.wire)
+
+    # ── Cycle 1: State updates ───────────────────────────────────
+    domain.next()
+
+    # On claim: set claimed bit for best_id
+    claim_mask = _const(0, num_sources)
+    for i in range(min(num_sources, 8)):
+        hit = best_id == _const(i, src_id_w)
+        bit = mux(hit & claim_valid & any_irq, _const(1 << i, num_sources), _const(0, num_sources))
+        claim_mask = claim_mask | bit
+
+    # On complete: clear claimed bit for complete_id
+    complete_mask = _const(0, num_sources)
+    for i in range(min(num_sources, 8)):
+        hit = complete_id == _const(i, src_id_w)
+        bit = mux(hit & complete_valid, _const(1 << i, num_sources), _const(0, num_sources))
+        complete_mask = complete_mask | bit
+
+    new_claimed = (claimed | claim_mask) & (~complete_mask)
+    claimed.set(new_claimed)
+
+
+build_plic.__pycircuit_name__ = "plic"
+
+
+# ═══════════════════════════════════════════════════════════════════
+#  CLINT — Core Local Interruptor (stub)
+# ═══════════════════════════════════════════════════════════════════
+
+def build_clint(
+    m: CycleAwareCircuit,
+    domain: CycleAwareDomain,
+    *,
+    timer_width: int = CLINT_TIMER_WIDTH,
+) -> None:
+    """CLINT stub: timer interrupt (mtip) and software interrupt (msip)."""
+
+    # ── Cycle 0: Inputs ──────────────────────────────────────────
+
+    # Software interrupt write
+    msip_write_valid = cas(domain, m.input("msip_write_valid", width=1), cycle=0)
+    msip_write_data  = cas(domain, m.input("msip_write_data", width=1), cycle=0)
+
+    # Timer compare register write
+    mtimecmp_write_valid = cas(domain, m.input("mtimecmp_write_valid", width=1), cycle=0)
+    mtimecmp_write_data  = cas(domain, m.input("mtimecmp_write_data", width=timer_width), cycle=0)
+
+    # ── State ────────────────────────────────────────────────────
+
+    mtime    = domain.state(width=timer_width, reset_value=0, name="mtime")
+    mtimecmp = domain.state(width=timer_width, reset_value=0, name="mtimecmp")
+    msip_reg = domain.state(width=1, reset_value=0, name="msip")
+
+    # ── Cycle 0: Combinational ───────────────────────────────────
+
+    def _const(val, w):
+        return cas(domain, m.const(val, width=w), cycle=0)
+
+    # Timer interrupt: mtime >= mtimecmp
+    # Unsigned comparison: mtip = ~(mtime < mtimecmp)
+    time_lt_cmp = mtime < mtimecmp
+    mtip = ~time_lt_cmp
+
+    # ── Outputs ──────────────────────────────────────────────────
+    m.output("mtip", mtip.wire)
+    m.output("msip", msip_reg.wire)
+    m.output("mtime_out", mtime.wire)
+
+    # ── Cycle 1: State updates ───────────────────────────────────
+    domain.next()
+
+    one = _const(1, timer_width)
+
+    # mtime increments every cycle (free-running counter)
+    next_mtime = cas(domain, (mtime.wire + one.wire)[0:timer_width], cycle=0)
+    mtime.set(next_mtime)
+
+    # mtimecmp updated on write
+    mtimecmp.set(mux(mtimecmp_write_valid, mtimecmp_write_data, mtimecmp))
+
+    # msip updated on write
+    msip_reg.set(mux(msip_write_valid, msip_write_data, msip_reg))
+
+
+build_clint.__pycircuit_name__ = "clint"
+
+
+# ═══════════════════════════════════════════════════════════════════
+#  Standalone emission
+# ═══════════════════════════════════════════════════════════════════
+
+if __name__ == "__main__":
+    print("=== PLIC ===")
+    print(compile_cycle_aware(
+        build_plic, name="plic", eager=True,
+        num_sources=8, num_targets=2, prio_width=PLIC_PRIO_WIDTH,
+    ).emit_mlir())
+
+    print("\n=== CLINT ===")
+    print(compile_cycle_aware(
+        build_clint, name="clint", eager=True,
+        timer_width=CLINT_TIMER_WIDTH,
+    ).emit_mlir())

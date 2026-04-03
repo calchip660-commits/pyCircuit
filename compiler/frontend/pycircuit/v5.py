@@ -8,12 +8,13 @@ compile_cycle_aware() instead of @module + compile().
 from __future__ import annotations
 
 import ast
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 import inspect
 import textwrap
 import threading
-from typing import Any, Callable, Iterable, Iterator, Mapping, TypeVar, Union
+from typing import Any, TypeVar, Union
 
 from .dsl import Signal
 from .hw import Circuit, ClockDomain, Reg, Wire
@@ -44,7 +45,9 @@ class _ModuleCtx:
 class CycleAwareCircuit(Circuit):
     """V5 top-level builder; extends Circuit so m.out / m.cat / emit_mlir work unchanged."""
 
-    def create_domain(self, name: str, *, frequency_desc: str = "", reset_active_high: bool = False) -> "CycleAwareDomain":
+    def create_domain(
+        self, name: str, *, frequency_desc: str = "", reset_active_high: bool = False
+    ) -> "CycleAwareDomain":
         _ = (frequency_desc, reset_active_high)
         return CycleAwareDomain(self, str(name))
 
@@ -149,7 +152,9 @@ class CycleAwareDomain:
         reg_name = str(name).strip() or f"_v5_reg_{self._reg_serial}"
         self._reg_serial += 1
         full = self._m.scoped_name(reg_name)
-        reg = self._m.out(full, domain=self._cd, width=int(width), init=int(reset_value))
+        reg = self._m.out(
+            full, domain=self._cd, width=int(width), init=int(reset_value)
+        )
         return StateSignal(self, reg, self._occurrence)
 
     def delay_to(self, w: Wire, *, from_cycle: int, to_cycle: int, width: int) -> Wire:
@@ -161,7 +166,9 @@ class CycleAwareDomain:
         for _ in range(d):
             self._delay_serial += 1
             nm = f"_v5_bal_{self._delay_serial}"
-            r = self._m.out(self._m.scoped_name(nm), domain=self._cd, width=width, init=0)
+            r = self._m.out(
+                self._m.scoped_name(nm), domain=self._cd, width=width, init=0
+            )
             r.set(cur)
             cur = r.q
         return cur
@@ -182,7 +189,9 @@ def _as_wire(m: Circuit, sig: Union[Wire, Reg, "CycleAwareSignal", Signal]) -> W
         return sig
     if isinstance(sig, Signal):
         return Wire(m, sig)
-    raise TypeError(f"expected Wire/Reg/CycleAwareSignal/Signal, got {type(sig).__name__}")
+    raise TypeError(
+        f"expected Wire/Reg/CycleAwareSignal/Signal, got {type(sig).__name__}"
+    )
 
 
 class StateSignal:
@@ -198,6 +207,11 @@ class StateSignal:
         self._domain = domain
         self._reg = reg
         self._cas = CycleAwareSignal(domain, reg.out(), cycle)
+
+    def _current_view(self) -> "CycleAwareSignal":
+        # A state register's Q is readable at every later logical occurrence
+        # without introducing a physical balance register.
+        return CycleAwareSignal(self._domain, self._reg.out(), self._domain.cycle_index)
 
     def set(
         self,
@@ -234,54 +248,57 @@ class StateSignal:
         return self._domain
 
     def __getattr__(self, name: str) -> object:
-        return getattr(self._cas, name)
+        return getattr(self._current_view(), name)
 
     def __add__(self, other: object) -> "CycleAwareSignal":
-        return self._cas.__add__(other)
+        return self._current_view().__add__(other)
 
     def __radd__(self, other: object) -> "CycleAwareSignal":
-        return self._cas.__radd__(other)
+        return self._current_view().__radd__(other)
 
     def __sub__(self, other: object) -> "CycleAwareSignal":
-        return self._cas.__sub__(other)
+        return self._current_view().__sub__(other)
+
+    def __rsub__(self, other: object) -> "CycleAwareSignal":
+        return self._current_view().__rsub__(other)
 
     def __mul__(self, other: object) -> "CycleAwareSignal":
-        return self._cas.__mul__(other)
+        return self._current_view().__mul__(other)
 
     def __and__(self, other: object) -> "CycleAwareSignal":
-        return self._cas.__and__(other)
+        return self._current_view().__and__(other)
 
     def __or__(self, other: object) -> "CycleAwareSignal":
         if isinstance(other, str):
-            return self._cas
-        return self._cas.__or__(other)
+            return self._current_view()
+        return self._current_view().__or__(other)
 
     def __xor__(self, other: object) -> "CycleAwareSignal":
-        return self._cas.__xor__(other)
+        return self._current_view().__xor__(other)
 
     def __invert__(self) -> "CycleAwareSignal":
-        return self._cas.__invert__()
+        return self._current_view().__invert__()
 
     def __eq__(self, other: object) -> "CycleAwareSignal":  # type: ignore[override]
-        return self._cas.__eq__(other)
+        return self._current_view().__eq__(other)
 
     def __ne__(self, other: object) -> "CycleAwareSignal":  # type: ignore[override]
-        return self._cas.__ne__(other)
+        return self._current_view().__ne__(other)
 
     def __lt__(self, other: object) -> "CycleAwareSignal":
-        return self._cas.__lt__(other)
+        return self._current_view().__lt__(other)
 
     def __gt__(self, other: object) -> "CycleAwareSignal":
-        return self._cas.__gt__(other)
+        return self._current_view().__gt__(other)
 
     def __le__(self, other: object) -> "CycleAwareSignal":
-        return self._cas.__le__(other)
+        return self._current_view().__le__(other)
 
     def __ge__(self, other: object) -> "CycleAwareSignal":
-        return self._cas.__ge__(other)
+        return self._current_view().__ge__(other)
 
     def __getitem__(self, idx: int | slice) -> "CycleAwareSignal":
-        return self._cas.__getitem__(idx)
+        return self._current_view().__getitem__(idx)
 
     def __repr__(self) -> str:
         return f"StateSignal({self._cas.wire}, cycle={self._cas.cycle})"
@@ -296,7 +313,9 @@ def _to_wire(v: "Wire | Reg | CycleAwareSignal | StateSignal") -> Wire:
         return v.q
     if isinstance(v, Wire):
         return v
-    raise TypeError(f"expected Wire/Reg/CycleAwareSignal/StateSignal, got {type(v).__name__}")
+    raise TypeError(
+        f"expected Wire/Reg/CycleAwareSignal/StateSignal, got {type(v).__name__}"
+    )
 
 
 class CycleAwareSignal:
@@ -343,9 +362,12 @@ class CycleAwareSignal:
         nw = self._domain._m.named(self._w, str(name))
         return CycleAwareSignal(self._domain, nw, self._cycle)
 
-    def _align(self, other: "CycleAwareSignal | StateSignal | Wire | Reg | int | LiteralValue") -> tuple[Wire, Wire, int]:
+    def _align(
+        self,
+        other: "CycleAwareSignal | StateSignal | Wire | Reg | int | LiteralValue",
+    ) -> tuple[Wire, Wire, int]:
         if isinstance(other, StateSignal):
-            return self._align(other._cas)
+            return self._align(other._current_view())
         if isinstance(other, CycleAwareSignal):
             if other._domain is not self._domain:
                 raise ValueError("CycleAwareSignal operands must share the same domain")
@@ -355,16 +377,24 @@ class CycleAwareSignal:
             ow = other.q if isinstance(other, Reg) else other
             oc = self._domain.cycle_index
         elif isinstance(other, int):
-            ow = self._domain._m.const(other, width=max(1, infer_literal_width(other, signed=other < 0)))
+            ow = self._domain._m.const(
+                other, width=max(1, infer_literal_width(other, signed=other < 0))
+            )
             oc = self._domain.cycle_index
         elif isinstance(other, LiteralValue):
-            lit_w = other.width if other.width is not None else infer_literal_width(int(other.value), signed=bool(other.signed))
+            lit_w = (
+                other.width
+                if other.width is not None
+                else infer_literal_width(int(other.value), signed=bool(other.signed))
+            )
             ow = self._domain._m.const(int(other.value), width=int(lit_w))
             oc = self._domain.cycle_index
         else:
             raise TypeError(f"unsupported operand: {type(other).__name__}")
         mx = max(self._cycle, oc)
-        aw = self._domain.delay_to(self._w, from_cycle=self._cycle, to_cycle=mx, width=self._w.width)
+        aw = self._domain.delay_to(
+            self._w, from_cycle=self._cycle, to_cycle=mx, width=self._w.width
+        )
         bw = self._domain.delay_to(ow, from_cycle=oc, to_cycle=mx, width=ow.width)
         a2, b2 = _promote_pair(self._domain._m, aw, bw)
         return a2, b2, mx
@@ -379,6 +409,10 @@ class CycleAwareSignal:
     def __sub__(self, other: object) -> "CycleAwareSignal":
         a, b, c = self._align(other)  # type: ignore[arg-type]
         return CycleAwareSignal(self._domain, a - b, c)
+
+    def __rsub__(self, other: object) -> "CycleAwareSignal":
+        a, b, c = self._align(other)  # type: ignore[arg-type]
+        return CycleAwareSignal(self._domain, b - a, c)
 
     def __mul__(self, other: object) -> "CycleAwareSignal":
         a, b, c = self._align(other)  # type: ignore[arg-type]
@@ -442,13 +476,19 @@ class CycleAwareSignal:
         return self.__ge__(other)
 
     def trunc(self, width: int) -> "CycleAwareSignal":
-        return CycleAwareSignal(self._domain, self._w.trunc(width=int(width)), self._cycle)
+        return CycleAwareSignal(
+            self._domain, self._w.trunc(width=int(width)), self._cycle
+        )
 
     def zext(self, width: int) -> "CycleAwareSignal":
-        return CycleAwareSignal(self._domain, self._w.zext(width=int(width)), self._cycle)
+        return CycleAwareSignal(
+            self._domain, self._w.zext(width=int(width)), self._cycle
+        )
 
     def sext(self, width: int) -> "CycleAwareSignal":
-        return CycleAwareSignal(self._domain, self._w.sext(width=int(width)), self._cycle)
+        return CycleAwareSignal(
+            self._domain, self._w.sext(width=int(width)), self._cycle
+        )
 
     def slice(self, high: int, low: int) -> "CycleAwareSignal":
         lo = int(low)
@@ -459,10 +499,14 @@ class CycleAwareSignal:
         return mux(self, true_val, false_val)
 
     def as_signed(self) -> "CycleAwareSignal":
-        return CycleAwareSignal(self._domain, Wire(self._domain._m, self._w.sig, signed=True), self._cycle)
+        return CycleAwareSignal(
+            self._domain, Wire(self._domain._m, self._w.sig, signed=True), self._cycle
+        )
 
     def as_unsigned(self) -> "CycleAwareSignal":
-        return CycleAwareSignal(self._domain, Wire(self._domain._m, self._w.sig, signed=False), self._cycle)
+        return CycleAwareSignal(
+            self._domain, Wire(self._domain._m, self._w.sig, signed=False), self._cycle
+        )
 
     def __getitem__(self, idx: int | slice) -> "CycleAwareSignal":
         return CycleAwareSignal(self._domain, self._w[idx], self._cycle)
@@ -517,11 +561,17 @@ def _mux_wire(
             else:
                 lit_w = infer_literal_width(
                     int(v.value),
-                    signed=(bool(v.signed) if v.signed is not None else int(v.value) < 0),
+                    signed=(
+                        bool(v.signed) if v.signed is not None else int(v.value) < 0
+                    ),
                 )
             return m.const(int(v.value), width=int(lit_w))
         if isinstance(v, int):
-            w = ctx_w if ctx_w is not None else max(1, infer_literal_width(int(v), signed=(int(v) < 0)))
+            w = (
+                ctx_w
+                if ctx_w is not None
+                else max(1, infer_literal_width(int(v), signed=(int(v) < 0)))
+            )
             return m.const(int(v), width=int(w))
         raise TypeError(f"mux: unsupported branch type {type(v).__name__}")
 
@@ -547,7 +597,9 @@ def _mux_cycle_aware(
     dom = pick_dom()
     m = dom._m
 
-    def to_cas(x: Union[Wire, Reg, CycleAwareSignal, int, LiteralValue]) -> CycleAwareSignal:
+    def to_cas(
+        x: Union[Wire, Reg, CycleAwareSignal, int, LiteralValue]
+    ) -> CycleAwareSignal:
         if isinstance(x, CycleAwareSignal):
             return x
         if isinstance(x, Reg):
@@ -558,7 +610,11 @@ def _mux_cycle_aware(
             w = m.const(x, width=max(1, infer_literal_width(x, signed=x < 0)))
             return CycleAwareSignal(dom, w, dom.cycle_index)
         if isinstance(x, LiteralValue):
-            lw = x.width if x.width is not None else infer_literal_width(int(x.value), signed=bool(x.signed))
+            lw = (
+                x.width
+                if x.width is not None
+                else infer_literal_width(int(x.value), signed=bool(x.signed))
+            )
             w = m.const(int(x.value), width=int(lw))
             return CycleAwareSignal(dom, w, dom.cycle_index)
         raise TypeError(f"mux: unsupported value {type(x).__name__}")
@@ -579,12 +635,16 @@ def _mux_cycle_aware(
     return CycleAwareSignal(dom, out_w, mx)
 
 
-def cas(domain: CycleAwareDomain, w: Wire, *, cycle: int | None = None) -> CycleAwareSignal:
+def cas(
+    domain: CycleAwareDomain, w: Wire, *, cycle: int | None = None
+) -> CycleAwareSignal:
     c = domain.cycle_index if cycle is None else int(cycle)
     return CycleAwareSignal(domain, w, c)
 
 
-def _strip_domain_for_jit(fn: Callable[..., Any], *, domain_name: str) -> Callable[..., Any]:
+def _strip_domain_for_jit(
+    fn: Callable[..., Any], *, domain_name: str
+) -> Callable[..., Any]:
     """Drop the ``domain`` parameter for JIT and prepend ``domain = m.create_domain(...)``."""
     try:
         source = textwrap.dedent(inspect.getsource(fn))
@@ -602,10 +662,14 @@ def _strip_domain_for_jit(fn: Callable[..., Any], *, domain_name: str) -> Callab
             fdef = node
             break
     if fdef is None:
-        raise TypeError(f"compile_cycle_aware: could not find def {name!r} in source of {fn!r}")
+        raise TypeError(
+            f"compile_cycle_aware: could not find def {name!r} in source of {fn!r}"
+        )
     pos = fdef.args.args
     if len(pos) < 2:
-        raise TypeError("compile_cycle_aware(fn): source must declare at least (m, domain, ...)")
+        raise TypeError(
+            "compile_cycle_aware(fn): source must declare at least (m, domain, ...)"
+        )
     m_arg = pos[0].arg
     if pos[1].arg != "domain":
         raise TypeError(
@@ -664,7 +728,11 @@ def compile_cycle_aware(
     hierarchical module composition.
     """
     if eager:
-        circuit_name = name if isinstance(name, str) and name.strip() else getattr(fn, "__name__", "design") or "design"
+        circuit_name = (
+            name
+            if isinstance(name, str) and name.strip()
+            else getattr(fn, "__name__", "design") or "design"
+        )
         m = CycleAwareCircuit(str(circuit_name), design_ctx=design_ctx)
         dom = m.create_domain(str(domain_name))
         out = fn(m, dom, **jit_params)
@@ -683,7 +751,11 @@ def compile_cycle_aware(
     else:
         sym = str(name).strip()
 
-    struc = bool(getattr(fn, "__pycircuit_emit_structural__", False)) if structural is None else bool(structural)
+    struc = (
+        bool(getattr(fn, "__pycircuit_emit_structural__", False))
+        if structural is None
+        else bool(structural)
+    )
 
     if value_params is None:
         vp_raw = getattr(fn, "__pycircuit_value_params__", None)
@@ -800,7 +872,9 @@ class _SignalSlice:
     def __call__(self, *, value: Any = 0, name: str = "") -> CycleAwareSignal:
         dom = _current_domain()
         if dom is None:
-            raise RuntimeError("signal[...](...) requires an active pyc_CircuitModule.module() context")
+            raise RuntimeError(
+                "signal[...](...) requires an active pyc_CircuitModule.module() context"
+            )
         w = _materialize_signal_value(dom, value, self.width, str(name))
         return CycleAwareSignal(dom, w, dom.cycle_index)
 
@@ -834,15 +908,23 @@ class signal(metaclass=_SignalMeta):
 def _signal_plain(*, value: Any = 0, name: str = "") -> CycleAwareSignal:
     dom = _current_domain()
     if dom is None:
-        raise RuntimeError("signal(value=...) requires an active pyc_CircuitModule.module() context")
+        raise RuntimeError(
+            "signal(value=...) requires an active pyc_CircuitModule.module() context"
+        )
     w = _materialize_signal_value(dom, value, None, str(name))
     return CycleAwareSignal(dom, w, dom.cycle_index)
 
 
-def _materialize_signal_value(dom: CycleAwareDomain, value: Any, width: int | None, name: str) -> Wire:
+def _materialize_signal_value(
+    dom: CycleAwareDomain, value: Any, width: int | None, name: str
+) -> Wire:
     m = dom._m
     if isinstance(value, int):
-        w = infer_literal_width(int(value), signed=(int(value) < 0)) if width is None else int(width)
+        w = (
+            infer_literal_width(int(value), signed=(int(value) < 0))
+            if width is None
+            else int(width)
+        )
         return m.const(int(value), width=w)
     if isinstance(value, str):
         base = str(value).strip()
@@ -858,6 +940,7 @@ def _materialize_signal_value(dom: CycleAwareDomain, value: Any, width: int | No
 # ---------------------------------------------------------------------------
 # V5 Cycle-Aware Testbench wrapper
 # ---------------------------------------------------------------------------
+
 
 class CycleAwareTb:
     """V5 cycle-aware testbench wrapper.
@@ -954,5 +1037,3 @@ class CycleAwareTb:
 
     def random(self, port: str, **kw: Any) -> None:
         self._t.random(port, **kw)
-
-

@@ -44,6 +44,7 @@ def build(m: Circuit) -> None:
 - **V5 cycle-aware**: `docs/PyCurcit V5_CYCLE_AWARE_API.md`, `docs/PyCircuit V5 Programming Tutorial.md`
 - **Implementation workflow (10-step)**: `docs/pycircuit_implementation_method.md`
 - `docs/tutorial/index.md` (tutorial hub)
+- `docs/development/index.md`
+- `docs/development/testing-and-gates.md`
 - `designs/examples/README.md`
 - `docs/rfcs/pyc4.0-decisions.md` and `docs/updatePLAN.md` (contracts + execution plan)
-

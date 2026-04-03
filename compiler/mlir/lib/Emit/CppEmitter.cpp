@@ -343,6 +343,10 @@ static LogicalResult emitCombAssign(Operation &op, llvm::raw_ostream &os, NameTa
     os << "    " << nt.get(a.getResult()) << " = " << nt.get(a.getIn()) << ";\n";
     return success();
   }
+  if (auto ra = dyn_cast<pyc::ResetActiveOp>(op)) {
+    os << "    " << nt.get(ra.getActive()) << " = " << nt.get(ra.getRst()) << ";\n";
+    return success();
+  }
   if (auto a = dyn_cast<pyc::AddOp>(op)) {
     os << "    " << nt.get(a.getResult()) << " = (" << nt.get(a.getLhs()) << " + " << nt.get(a.getRhs()) << ");\n";
     return success();
@@ -1515,6 +1519,7 @@ static LogicalResult emitFunc(func::FuncOp f, llvm::raw_ostream &os, const CppEm
             pyc::NotOp,
             pyc::ConcatOp,
             pyc::AliasOp,
+            pyc::ResetActiveOp,
             pyc::EqOp,
             pyc::UltOp,
             pyc::SltOp,
@@ -1929,6 +1934,7 @@ static LogicalResult emitFunc(func::FuncOp f, llvm::raw_ostream &os, const CppEm
             pyc::NotOp,
             pyc::ConcatOp,
             pyc::AliasOp,
+            pyc::ResetActiveOp,
             pyc::EqOp,
             pyc::UltOp,
             pyc::SltOp,

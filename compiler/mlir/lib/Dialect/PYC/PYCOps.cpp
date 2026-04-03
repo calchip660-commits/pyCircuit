@@ -609,16 +609,14 @@ LogicalResult ByteMemOp::verify() {
     return emitOpError("rdata type must match wdata type");
 
   unsigned dataW = dataTy.getWidth();
-  if (dataW == 0 || dataW > 64)
-    return emitOpError("prototype supports data widths 1..64");
-  if ((dataW % 8) != 0)
-    return emitOpError("prototype requires data width divisible by 8");
+  if (dataW == 0)
+    return emitOpError("data width must be >= 1");
 
   auto strbTy = dyn_cast<IntegerType>(getWstrb().getType());
   if (!strbTy)
     return emitOpError("only supports integer wstrb types");
-  if (strbTy.getWidth() != (dataW / 8))
-    return emitOpError("wstrb width must be (data_width / 8)");
+  if (strbTy.getWidth() != ((dataW + 7) / 8))
+    return emitOpError("wstrb width must be ceil(data_width / 8)");
 
   auto depthAttr = (*this)->getAttrOfType<IntegerAttr>("depth");
   if (!depthAttr)
@@ -650,16 +648,14 @@ LogicalResult SyncMemOp::verify() {
     return emitOpError("rdata type must match wdata type");
 
   unsigned dataW = dataTy.getWidth();
-  if (dataW == 0 || dataW > 64)
-    return emitOpError("prototype supports data widths 1..64");
-  if ((dataW % 8) != 0)
-    return emitOpError("prototype requires data width divisible by 8");
+  if (dataW == 0)
+    return emitOpError("data width must be >= 1");
 
   auto strbTy = dyn_cast<IntegerType>(getWstrb().getType());
   if (!strbTy)
     return emitOpError("only supports integer wstrb types");
-  if (strbTy.getWidth() != (dataW / 8))
-    return emitOpError("wstrb width must be (data_width / 8)");
+  if (strbTy.getWidth() != ((dataW + 7) / 8))
+    return emitOpError("wstrb width must be ceil(data_width / 8)");
 
   auto depthAttr = (*this)->getAttrOfType<IntegerAttr>("depth");
   if (!depthAttr)
@@ -693,16 +689,14 @@ LogicalResult SyncMemDPOp::verify() {
     return emitOpError("rdata types must match wdata type");
 
   unsigned dataW = dataTy.getWidth();
-  if (dataW == 0 || dataW > 64)
-    return emitOpError("prototype supports data widths 1..64");
-  if ((dataW % 8) != 0)
-    return emitOpError("prototype requires data width divisible by 8");
+  if (dataW == 0)
+    return emitOpError("data width must be >= 1");
 
   auto strbTy = dyn_cast<IntegerType>(getWstrb().getType());
   if (!strbTy)
     return emitOpError("only supports integer wstrb types");
-  if (strbTy.getWidth() != (dataW / 8))
-    return emitOpError("wstrb width must be (data_width / 8)");
+  if (strbTy.getWidth() != ((dataW + 7) / 8))
+    return emitOpError("wstrb width must be ceil(data_width / 8)");
 
   auto depthAttr = (*this)->getAttrOfType<IntegerAttr>("depth");
   if (!depthAttr)

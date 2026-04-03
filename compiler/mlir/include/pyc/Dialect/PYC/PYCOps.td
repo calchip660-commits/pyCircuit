@@ -247,6 +247,13 @@ def PYC_AliasOp : PYC_Op<"alias", [Pure, SameOperandsAndResultType]> {
   let hasFolder = 1;
 }
 
+def PYC_ResetActiveOp : PYC_Op<"reset_active", [Pure]> {
+  let summary = "View reset port as active-high i1 for data-path gating (1 = reset asserted; matches pyCircuit TB/SV)";
+  let arguments = (ins PYC_ResetType:$rst);
+  let results = (outs I1:$active);
+  let assemblyFormat = "$rst attr-dict `:` type($active)";
+}
+
 def PYC_WireOp : PYC_Op<"wire"> {
   let summary = "Declare a combinational wire (placeholder)";
   let results = (outs AnyInteger:$result);

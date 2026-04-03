@@ -244,6 +244,13 @@ public:
           return out;
         }
 
+        if (auto ra = dyn_cast<pyc::ResetActiveOp>(def)) {
+          out = domain(ra.getRst());
+          domVisiting_.erase(v);
+          domMemo_.try_emplace(v, out);
+          return out;
+        }
+
         if (auto comb = dyn_cast<pyc::CombOp>(def)) {
           unsigned resIdx = 0;
           if (auto r = dyn_cast<OpResult>(v))
@@ -267,6 +274,8 @@ public:
         // Generic combinational op: union operand domains.
         for (Value opnd : def->getOperands()) {
           if (opnd && isIntType(opnd.getType()))
+            out |= domain(opnd);
+          if (opnd && isa<pyc::ResetType>(opnd.getType()))
             out |= domain(opnd);
         }
 
@@ -344,6 +353,13 @@ public:
 
         if (auto a = dyn_cast<pyc::AliasOp>(def)) {
           out = argDeps(a.getIn());
+          argVisiting_.erase(v);
+          argMemo_.try_emplace(v, out);
+          return out;
+        }
+
+        if (auto ra = dyn_cast<pyc::ResetActiveOp>(def)) {
+          out = argDeps(ra.getRst());
           argVisiting_.erase(v);
           argMemo_.try_emplace(v, out);
           return out;

@@ -67,6 +67,14 @@ class Module:
     def reset(self, name: str) -> Signal:
         return self._arg(name, "!pyc.reset")
 
+    def reset_active(self, rst: Signal) -> Signal:
+        """Return i1 where **1** means reset is asserted (same convention as ``Tb.reset`` / SV TB)."""
+        if rst.ty != "!pyc.reset":
+            raise TypeError("reset_active expects a !pyc.reset signal (use m.reset(...))")
+        tmp = self._tmp()
+        self._emit(f"{tmp} = pyc.reset_active {rst.ref} : i1")
+        return Signal(ref=tmp, ty="i1")
+
     def i(self, width: int) -> str:
         if width <= 0:
             raise ValueError("width must be > 0")

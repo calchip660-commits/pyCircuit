@@ -1594,7 +1594,7 @@ def build(m: CycleAwareCircuit, domain: CycleAwareDomain, ...) -> None:
 ```bash
 #!/bin/bash
 set -e
-PYTHONPATH=pyCircuit/compiler/frontend
+PYTHONPATH=compiler/frontend   # from repository root
 
 echo "=== Phase 1: MLIR 编译检查 ==="
 for design in designs/RegisterFile/regfile.py \

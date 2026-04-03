@@ -24,9 +24,8 @@ template <unsigned AddrWidth, unsigned DataWidth, std::size_t DepthEntries>
 class pyc_sync_mem {
 public:
   static_assert(DataWidth > 0, "pyc_sync_mem requires DataWidth > 0");
-  static_assert((DataWidth % 8) == 0, "pyc_sync_mem requires DataWidth divisible by 8");
   static_assert(DepthEntries > 0, "pyc_sync_mem DepthEntries must be > 0");
-  static constexpr unsigned StrbWidth = DataWidth / 8;
+  static constexpr unsigned StrbWidth = (DataWidth + 7) / 8;
 
   pyc_sync_mem(Wire<1> &clk,
                Wire<1> &rst,
@@ -224,6 +223,11 @@ private:
     return out;
   }
 
+  static constexpr unsigned lastLaneBits() {
+    unsigned rem = DataWidth % 8;
+    return (rem == 0) ? 8 : rem;
+  }
+
   static constexpr Wire<DataWidth> applyStrb(Wire<DataWidth> oldV, Wire<DataWidth> newV, Wire<StrbWidth> strb) {
     if constexpr (DataWidth <= 64) {
       std::uint64_t out = oldV.value();
@@ -231,7 +235,8 @@ private:
       for (unsigned i = 0; i < StrbWidth; i++) {
         if (!strb.bit(i))
           continue;
-        std::uint64_t mask = (0xFFull << (8u * i));
+        unsigned bitsInLane = (i == StrbWidth - 1) ? lastLaneBits() : 8u;
+        std::uint64_t mask = ((1ull << bitsInLane) - 1ull) << (8u * i);
         out = (out & ~mask) | (src & mask);
       }
       return Wire<DataWidth>(out);
@@ -240,10 +245,14 @@ private:
     for (unsigned i = 0; i < StrbWidth; i++) {
       if (!strb.bit(i))
         continue;
-      Wire<8> byte = extract<8, DataWidth>(newV, 8u * i);
-      Wire<DataWidth> byteData = shl<DataWidth>(zext<DataWidth, 8>(byte), 8u * i);
-      Wire<DataWidth> byteMask = shl<DataWidth>(zext<DataWidth, 8>(Wire<8>(0xFFu)), 8u * i);
-      v = (v & ~byteMask) | byteData;
+      unsigned bitsInLane = (i == StrbWidth - 1) ? lastLaneBits() : 8u;
+      for (unsigned b = 0; b < bitsInLane; ++b) {
+        unsigned bitIdx = 8u * i + b;
+        if (newV.bit(bitIdx))
+          v = v | shl<DataWidth>(Wire<DataWidth>(1), bitIdx);
+        else
+          v = v & ~shl<DataWidth>(Wire<DataWidth>(1), bitIdx);
+      }
     }
     return v;
   }
@@ -261,9 +270,8 @@ template <unsigned AddrWidth, unsigned DataWidth, std::size_t DepthEntries>
 class pyc_sync_mem_dp {
 public:
   static_assert(DataWidth > 0, "pyc_sync_mem_dp requires DataWidth > 0");
-  static_assert((DataWidth % 8) == 0, "pyc_sync_mem_dp requires DataWidth divisible by 8");
   static_assert(DepthEntries > 0, "pyc_sync_mem_dp DepthEntries must be > 0");
-  static constexpr unsigned StrbWidth = DataWidth / 8;
+  static constexpr unsigned StrbWidth = (DataWidth + 7) / 8;
 
   pyc_sync_mem_dp(Wire<1> &clk,
                   Wire<1> &rst,
@@ -487,6 +495,11 @@ private:
     return out;
   }
 
+  static constexpr unsigned lastLaneBits() {
+    unsigned rem = DataWidth % 8;
+    return (rem == 0) ? 8 : rem;
+  }
+
   static constexpr Wire<DataWidth> applyStrb(Wire<DataWidth> oldV, Wire<DataWidth> newV, Wire<StrbWidth> strb) {
     if constexpr (DataWidth <= 64) {
       std::uint64_t out = oldV.value();
@@ -494,7 +507,8 @@ private:
       for (unsigned i = 0; i < StrbWidth; i++) {
         if (!strb.bit(i))
           continue;
-        std::uint64_t mask = (0xFFull << (8u * i));
+        unsigned bitsInLane = (i == StrbWidth - 1) ? lastLaneBits() : 8u;
+        std::uint64_t mask = ((1ull << bitsInLane) - 1ull) << (8u * i);
         out = (out & ~mask) | (src & mask);
       }
       return Wire<DataWidth>(out);
@@ -503,10 +517,14 @@ private:
     for (unsigned i = 0; i < StrbWidth; i++) {
       if (!strb.bit(i))
         continue;
-      Wire<8> byte = extract<8, DataWidth>(newV, 8u * i);
-      Wire<DataWidth> byteData = shl<DataWidth>(zext<DataWidth, 8>(byte), 8u * i);
-      Wire<DataWidth> byteMask = shl<DataWidth>(zext<DataWidth, 8>(Wire<8>(0xFFu)), 8u * i);
-      v = (v & ~byteMask) | byteData;
+      unsigned bitsInLane = (i == StrbWidth - 1) ? lastLaneBits() : 8u;
+      for (unsigned b = 0; b < bitsInLane; ++b) {
+        unsigned bitIdx = 8u * i + b;
+        if (newV.bit(bitIdx))
+          v = v | shl<DataWidth>(Wire<DataWidth>(1), bitIdx);
+        else
+          v = v & ~shl<DataWidth>(Wire<DataWidth>(1), bitIdx);
+      }
     }
     return v;
   }

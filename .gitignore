@@ -237,3 +237,11 @@ janus/
 designs/**/generated/
 designs/examples/generated/**/verilator/
 designs/janus/generated/
+
+# XiangShan-pyc build outputs
+designs/XiangShan-pyc/build_out/
+designs/XiangShan-pyc/build_out_small/
+
+# External XiangShan repos (not part of pyCircuit)
+designs/XiangShan/
+designs/XiangShan-doc/

@@ -10,6 +10,21 @@ from pycircuit import Circuit, Tb, compile, module, function, const, testbench
 from pycircuit import ct, spec, wiring, logic, lib
 ```
 
+**V5 (cycle-aware) surface** (same package):
+
+```python
+from pycircuit import (
+    CycleAwareCircuit,
+    CycleAwareDomain,
+    CycleAwareSignal,
+    compile_cycle_aware,
+    mux,
+    cas,
+)
+```
+
+See `docs/PyCurcit V5_CYCLE_AWARE_API.md`.
+
 ## Key decorators
 
 - `@module`: hierarchy boundary (materializes instances; maps 1:1 to SimObjects)

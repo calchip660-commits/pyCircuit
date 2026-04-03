@@ -1,6 +1,8 @@
 # PyCircuit Cycle-Aware API Reference
 
-**Version: 2.0**
+**Version: 2.1** (aligned with `compiler/frontend/pycircuit/v5.py`)
+
+> Filename uses historic spelling **PyCurcit**; the implementation lives in the **`pycircuit`** package.
 
 ---
 
@@ -31,22 +33,21 @@ from pycircuit import (
 
 ### CycleAwareCircuit
 
-The main circuit builder class that manages clock domains and signal generation.
+Subclass of `Circuit` used for V5 cycle-aware authoring. All `Circuit` APIs (`m.clock`, `m.input`, `m.out`, `m.output`, `emit_mlir`, scopes, `@module` children when composed, etc.) remain available.
 
 ```python
 m = CycleAwareCircuit("my_circuit")
 ```
 
-**Methods:**
+**Methods (V5-specific and common):**
 
 | Method | Description |
 |--------|-------------|
-| `create_domain(name)` | Create a new clock domain |
-| `get_default_domain()` | Get the default clock domain |
-| `const_signal(value, width, domain)` | Create a constant signal |
-| `input_signal(name, width, domain)` | Create an input signal |
-| `output(name, signal)` | Register an output signal |
-| `emit_mlir()` | Generate MLIR representation |
+| `create_domain(name, *, frequency_desc="", reset_active_high=False)` | Create a `CycleAwareDomain` (extra args accepted for documentation; not yet wired into codegen) |
+| `const_signal(value, width, domain)` | Constant as `Wire` via `domain.create_const` |
+| `input_signal(name, width, domain)` | Input port as `Wire` via `domain.create_signal` |
+| `output(name, signal)` | Register a module output (inherited from `Circuit`) |
+| `emit_mlir()` | Generate MLIR string (inherited from `Circuit`) |
 
 ### CycleAwareDomain
 
@@ -60,13 +61,17 @@ domain = m.create_domain("clk")
 
 | Method | Description |
 |--------|-------------|
-| `create_signal(name, width)` | Create an input signal |
-| `create_const(value, width, name)` | Create a constant signal |
-| `next()` | Advance current cycle by 1 |
-| `prev()` | Decrease current cycle by 1 |
-| `push()` | Save current cycle to stack |
-| `pop()` | Restore cycle from stack |
-| `cycle(signal, reset_value, name)` | Insert DFF register |
+| `create_signal(name, *, width)` | Create an input port (`Wire`); `width` is **keyword-only** |
+| `create_const(value, *, width, name="")` | Create a constant `Wire` |
+| `create_reset()` | Return reset as **i1** `Wire` (**1** = asserted) via lowering `pyc.reset_active` on the domain’s `!pyc.reset` port — safe for `mux` / boolean logic |
+| `next()` | Advance current occurrence cycle by 1 |
+| `prev()` | Decrease current occurrence cycle by 1 |
+| `push()` | Save current cycle on a stack |
+| `pop()` | Restore cycle from stack (must pair with `push`) |
+| `cycle(sig, reset_value=None, name="")` | One-deep register; returns **`Wire`** (the register’s `q`) |
+| `state(*, width, reset_value=0, name="")` | Feedback register as `StateSignal` (read current value, then `domain.next()` and `.set(next)`) |
+| `delay_to(w, *, from_cycle, to_cycle, width)` | Internal delay chain for cycle balancing |
+| `cycle_index` | Property: current logical occurrence index |
 
 ### CycleAwareSignal
 
@@ -76,11 +81,12 @@ Wrapper that carries cycle information along with the underlying MLIR signal.
 
 | Attribute | Description |
 |-----------|-------------|
-| `sig` | Underlying MLIR Signal |
-| `cycle` | Current cycle number |
-| `domain` | Associated CycleAwareDomain |
-| `name` | Signal name for debugging |
-| `signed` | Whether signal is signed |
+| `wire` / `w` | Underlying `Wire` |
+| `sig` | Underlying `Signal` |
+| `cycle` | Current logical cycle index |
+| `domain` | Associated `CycleAwareDomain` |
+| `name` | Debug string (wire repr) |
+| `signed` | Whether the wire is signed |
 
 **Operator Overloading:**
 
@@ -100,12 +106,17 @@ result = ~a      # NOT
 result = a << n  # Left shift
 result = a >> n  # Right shift
 
-# Comparison
-result = a.eq(b)  # Equal
-result = a.lt(b)  # Less than
-result = a.gt(b)  # Greater than
-result = a.le(b)  # Less or equal
-result = a.ge(b)  # Greater or equal
+# Comparison (either form; both lower to the same hardware)
+result = a == b   # Equal
+result = a.eq(b)  # Equal (explicit)
+result = a < b    # Less than
+result = a.lt(b)  # Less than (explicit)
+result = a > b
+result = a.gt(b)
+result = a <= b
+result = a.le(b)
+result = a >= b
+result = a.ge(b)
 ```
 
 **Signal Methods:**
@@ -154,7 +165,7 @@ def design(m: CycleAwareCircuit, domain: CycleAwareDomain):
     # System automatically inserts 2-level DFF chain for data_at_cycle0
     combined = data_at_cycle0 + stage2  # Output at Cycle 2
     
-    m.output("result", combined.sig)
+    m.output("result", combined.wire)
 ```
 
 Generated MLIR shows automatic DFF insertion:
@@ -233,32 +244,35 @@ counter_reg = domain.cycle(counter_next, reset_value=0, name="counter")
 
 ### compile_cycle_aware()
 
-Compile a Python function to a CycleAwareCircuit.
+Lowers `fn(m, domain, **kwargs)` either through **JIT** (`compile`) or **eager** construction.
 
 ```python
 def my_design(m: CycleAwareCircuit, domain: CycleAwareDomain, width: int = 8):
-    # Design logic
     data = domain.create_signal("data", width=width)
     processed = data + 1
     domain.next()
-    output = domain.cycle(processed, name="output")
-    m.output("out", output.sig)
+    output_w = domain.cycle(processed, name="output")
+    m.output("out", output_w)
 
-# Compile
-circuit = compile_cycle_aware(my_design, name="my_circuit", width=16)
+# JIT (default): returns compiled module like compile()
+mod = compile_cycle_aware(my_design, name="my_circuit", width=16)
 
-# Generate MLIR
-mlir_code = circuit.emit_mlir()
+# Eager: run Python body directly, returns CycleAwareCircuit
+m2 = compile_cycle_aware(my_design, name="my_circuit", width=16, eager=True)
+mlir_code = m2.emit_mlir()
 ```
 
 ### Parameters
 
 | Parameter | Description |
 |-----------|-------------|
-| `fn` | Python function to compile |
-| `name` | Circuit name (optional) |
-| `domain_name` | Default clock domain name (default: "clk") |
-| `**params` | Additional parameters passed to function |
+| `fn` | `def fn(m: CycleAwareCircuit, domain: CycleAwareDomain, ...)` |
+| `name` | Module/circuit name (optional) |
+| `domain_name` | Domain name (default `"clk"`); `"clk"` maps to top `clk`/`rst` ports |
+| `eager` | If `True`, no JIT; no `if Wire` / JIT control flow in the body |
+| `structural` | Forwarded to JIT wrapper (`__pycircuit_emit_structural__`) when not eager |
+| `value_params` | Optional runtime value-parameter map for the JIT wrapper |
+| `**jit_params` | Extra kwargs passed to `fn` and/or `jit.compile` |
 
 ### Return Statement
 
@@ -274,6 +288,16 @@ def design(m: CycleAwareCircuit, domain: CycleAwareDomain):
 ---
 
 ## Global Functions
+
+### cas()
+
+Wrap a plain `Wire` (e.g. from `m.input`) as a `CycleAwareSignal` at the domain’s current `cycle_index` (or at `cycle=` if given). Used heavily when migrating `@module` ports into V5 pipelines.
+
+```python
+from pycircuit import cas
+
+x = cas(domain, m.input("x", width=8), cycle=0)
+```
 
 ### mux()
 
@@ -334,8 +358,8 @@ def counter_with_enable(
     domain.next()
     count_reg = domain.cycle(count_with_enable, reset_value=0, name="count")
     
-    # Output
-    m.output("count", count_reg.sig)
+    # Output (`cycle` returns the register output `Wire`)
+    m.output("count", count_reg)
 
 
 if __name__ == "__main__":
@@ -349,12 +373,12 @@ if __name__ == "__main__":
 
 | Legacy API | Cycle-Aware API |
 |------------|-----------------|
-| `Circuit` | `CycleAwareCircuit` |
-| `ClockDomain` | `CycleAwareDomain` |
-| `Wire` / `Reg` | `CycleAwareSignal` |
-| `compile()` | `compile_cycle_aware()` |
-| Manual DFF insertion | Automatic via `domain.cycle()` |
-| No cycle tracking | Full cycle tracking |
+| `Circuit` | `CycleAwareCircuit` (subclass; `Circuit` APIs still valid) |
+| `ClockDomain` ports | `CycleAwareDomain` + `create_domain` |
+| `Wire` / `Reg` at ports | Often `cas(domain, m.input(...), cycle=...)` for typed cycles |
+| Feedback `m.out` + `.set` | `domain.state(...)` + `domain.next()` + `.set(...)` |
+| `compile()` | `compile_cycle_aware(...)` (JIT default) or `eager=True` |
+| Manual delay alignment | `domain.cycle()`, `delay_to`, and operator-driven balancing |
 
 ---
 

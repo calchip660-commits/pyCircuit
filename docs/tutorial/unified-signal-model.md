@@ -6,7 +6,11 @@ pyc4.0 uses an explicit structural model:
 - **Combinational logic** is expressed with Python operators over wires/values.
 - **State** is explicit (`m.out(...)` for registers; `mem` primitives for memories).
 
-There is no global “cycle-aware” signal system in pyc4.0.
+## V5 cycle-aware style (optional, same compiler)
+
+For pipelines that track **logical occurrence cycles** and automatic delay alignment, use **`CycleAwareCircuit` / `CycleAwareDomain` / `compile_cycle_aware`** (see `docs/PyCurcit V5_CYCLE_AWARE_API.md` and `docs/PyCircuit V5 Programming Tutorial.md`). That layer is implemented in `compiler/frontend/pycircuit/v5.py` and lowers to the same `pyc` MLIR as `@module` designs.
+
+Separately, **`ClockHandle`** + `clk.next()` + `m.assign(...)` is the primary **named-wire occurrence** model documented under tick/transfer simulation (`docs/tutorial/cycle-aware-computing.md`, `docs/cycle_balance_improvement.md`).
 
 ## Minimal counter
 

@@ -32,6 +32,7 @@ static bool isFusableCombOp(Operation *op) {
              pyc::NotOp,
              pyc::ConcatOp,
              pyc::AliasOp,
+             pyc::ResetActiveOp,
              pyc::EqOp,
              pyc::UltOp,
              pyc::SltOp,

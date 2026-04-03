@@ -32,17 +32,20 @@ If the backend sees a missing/mismatched contract marker, `pycc` fails early.
 
 ## Useful commands
 
-Run hygiene scan:
+Run hygiene scan (from repository root):
 
 ```bash
-python3 /Users/zhoubot/pyCircuit/flows/tools/check_api_hygiene.py
+REPO=/path/to/pyCircuit
+python3 "$REPO/flows/tools/check_api_hygiene.py"
 ```
 
 Emit + compile one module:
 
 ```bash
-PYTHONPATH=/Users/zhoubot/pyCircuit/compiler/frontend \
-python3 -m pycircuit.cli emit /Users/zhoubot/pyCircuit/designs/examples/counter/counter.py -o /tmp/counter.pyc
+REPO=/path/to/pyCircuit
+export PYTHONPATH="$REPO/compiler/frontend"
+python3 -m pycircuit.cli emit "$REPO/designs/examples/counter/counter.py" -o /tmp/counter.pyc
 
-/Users/zhoubot/pyCircuit/.pycircuit_out/toolchain/install/bin/pycc /tmp/counter.pyc --emit=cpp --out-dir /tmp/counter_cpp
+export PYC_TOOLCHAIN_ROOT="$REPO/.pycircuit_out/toolchain/install"
+"$PYC_TOOLCHAIN_ROOT/bin/pycc" /tmp/counter.pyc --emit=cpp --out-dir /tmp/counter_cpp
 ```

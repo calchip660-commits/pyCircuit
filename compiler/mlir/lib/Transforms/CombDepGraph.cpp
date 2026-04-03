@@ -22,7 +22,8 @@ static int64_t opCost(Operation *op) {
     return 0;
   if (isSequentialCut(op))
     return 0;
-  if (isa<pyc::WireOp, pyc::AliasOp, pyc::ConstantOp, pyc::CombOp, pyc::YieldOp, arith::ConstantOp>(op))
+  if (isa<pyc::WireOp, pyc::AliasOp, pyc::ResetActiveOp, pyc::ConstantOp, pyc::CombOp, pyc::YieldOp,
+          arith::ConstantOp>(op))
     return 0;
   return 1;
 }
@@ -117,6 +118,13 @@ public:
 
     if (auto a = dyn_cast<pyc::AliasOp>(def)) {
       out = analyze(a.getIn());
+      visiting_.erase(v);
+      memo_.try_emplace(v, out);
+      return out;
+    }
+
+    if (auto ra = dyn_cast<pyc::ResetActiveOp>(def)) {
+      out = analyze(ra.getRst());
       visiting_.erase(v);
       memo_.try_emplace(v, out);
       return out;

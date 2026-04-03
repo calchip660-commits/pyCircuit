@@ -168,7 +168,7 @@ static llvm::cl::opt<std::string> inlinePolicy(
 
 static llvm::cl::opt<std::string> hierarchyPolicy(
     "hierarchy-policy",
-    llvm::cl::desc("Module hierarchy policy: strict"),
+    llvm::cl::desc("Module hierarchy policy: strict | instantiate"),
     llvm::cl::init("strict"));
 
 static llvm::cl::opt<unsigned> canonicalizeBudget(
@@ -2106,10 +2106,15 @@ int main(int argc, char **argv) {
     }
   }
 
-  bool strictHierarchy = true;
-  if (hierarchyPolicy != "strict") {
+  bool strictHierarchy = false;
+  bool instantiateHierarchy = false;
+  if (hierarchyPolicy == "strict") {
+    strictHierarchy = true;
+  } else if (hierarchyPolicy == "instantiate") {
+    instantiateHierarchy = true;
+  } else {
     llvm::errs() << "error: unknown --hierarchy-policy: " << hierarchyPolicy
-                 << " (expected: strict)\n";
+                 << " (expected: strict | instantiate)\n";
     return 1;
   }
 
@@ -2122,9 +2127,10 @@ int main(int argc, char **argv) {
     inlineDecision.enableInline = false;
     inlineDecision.reason = "cli --noinline";
   } else if (inlinePolicy == "default") {
-    if (strictHierarchy) {
+    if (strictHierarchy || instantiateHierarchy) {
       inlineDecision.enableInline = false;
-      inlineDecision.reason = "strict hierarchy default";
+      inlineDecision.reason = strictHierarchy ? "strict hierarchy default"
+                                              : "instantiate hierarchy default";
     } else if (isDevFastProfile) {
       inlineDecision.enableInline = false;
       inlineDecision.reason = "dev-fast default";
@@ -2152,13 +2158,15 @@ int main(int argc, char **argv) {
     return 1;
   }
 
-  // Strict hierarchy is a hard non-inline policy: the frontend module graph
-  // must remain explicit and unflattened.
-  if (strictHierarchy && inlineDecision.enableInline) {
-    llvm::errs() << "error: strict hierarchy requires non-inline module compilation\n";
+  // Both strict and instantiate hierarchy prevent the MLIR inliner from
+  // collapsing module boundaries.
+  if ((strictHierarchy || instantiateHierarchy) && inlineDecision.enableInline) {
+    llvm::errs() << "error: " << hierarchyPolicy.getValue()
+                 << " hierarchy requires non-inline module compilation\n";
     llvm::errs() << "  inline_policy=" << inlineDecision.mode
                  << " enables inliner (reason: " << inlineDecision.reason << ")\n";
-    llvm::errs() << "  hint: use --inline-policy=off (or --inline-policy=default with --hierarchy-policy=strict)\n";
+    llvm::errs() << "  hint: use --inline-policy=off (or --inline-policy=default with --hierarchy-policy="
+                 << hierarchyPolicy.getValue() << ")\n";
     return 1;
   }
 
@@ -2237,6 +2245,14 @@ int main(int argc, char **argv) {
     }
     return 1;
   }
+  // instantiate mode: warn (but don't fail) if modules were removed
+  if (instantiateHierarchy && !hierarchyPreserved) {
+    llvm::errs() << "warning: instantiate hierarchy: some module symbols changed after passes\n";
+    for (const auto &sym : moduleSymbolsBefore) {
+      if (!moduleSymbolsAfter.count(sym))
+        llvm::errs() << "  removed_module=" << sym << "\n";
+    }
+  }
 
   CompileStatsSummary compileStats = collectCompileStats(*module, static_cast<int64_t>(logicDepthLimit));
   compileStats.fuseCombEnabled = enableFuseComb;
@@ -2258,7 +2274,7 @@ int main(int argc, char **argv) {
   auto buildProfileSummary = [&]() -> llvm::json::Object {
     llvm::json::Object obj;
     obj["build_profile"] = buildProfileNorm;
-    obj["hierarchy_policy"] = "strict";
+    obj["hierarchy_policy"] = hierarchyPolicy.getValue();
     obj["module_count_before"] = static_cast<int64_t>(moduleSymbolsBefore.size());
     obj["module_count_after"] = static_cast<int64_t>(moduleSymbolsAfter.size());
     obj["hierarchy_preserved"] = hierarchyPreserved;

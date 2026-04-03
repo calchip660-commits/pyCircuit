@@ -173,6 +173,10 @@ static LogicalResult emitComb(pyc::CombOp comb, raw_ostream &os, NameTable &nt) 
       os << "assign " << nt.get(a.getResult()) << " = " << nt.get(a.getIn()) << ";\n";
       continue;
     }
+    if (auto ra = dyn_cast<pyc::ResetActiveOp>(op)) {
+      os << "assign " << nt.get(ra.getActive()) << " = " << nt.get(ra.getRst()) << ";\n";
+      continue;
+    }
     if (auto a = dyn_cast<pyc::AddOp>(op)) {
       os << "assign " << nt.get(a.getResult()) << " = (" << nt.get(a.getLhs()) << " + " << nt.get(a.getRhs())
          << ");\n";
@@ -571,6 +575,7 @@ static LogicalResult emitFunc(func::FuncOp f, raw_ostream &os, const VerilogEmit
 
       if (isa<pyc::ConstantOp,
               pyc::AliasOp,
+              pyc::ResetActiveOp,
               pyc::AddOp,
               pyc::SubOp,
               pyc::MulOp,
@@ -638,6 +643,10 @@ static LogicalResult emitFunc(func::FuncOp f, raw_ostream &os, const VerilogEmit
       }
       if (auto a = dyn_cast<pyc::AliasOp>(op)) {
         os << "assign " << nt.get(a.getResult()) << " = " << nt.get(a.getIn()) << ";\n";
+        continue;
+      }
+      if (auto ra = dyn_cast<pyc::ResetActiveOp>(op)) {
+        os << "assign " << nt.get(ra.getActive()) << " = " << nt.get(ra.getRst()) << ";\n";
         continue;
       }
       if (auto a = dyn_cast<pyc::AddOp>(op)) {

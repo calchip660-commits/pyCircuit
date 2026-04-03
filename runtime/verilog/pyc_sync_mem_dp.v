@@ -31,14 +31,11 @@ module pyc_sync_mem_dp #(
       $display("ERROR: pyc_sync_mem_dp DEPTH must be > 0");
       $finish;
     end
-    if ((DATA_WIDTH % 8) != 0) begin
-      $display("ERROR: pyc_sync_mem_dp DATA_WIDTH must be divisible by 8");
-      $finish;
-    end
   end
   `endif
 
   localparam STRB_WIDTH = (DATA_WIDTH + 7) / 8;
+  localparam LAST_LANE_BITS = DATA_WIDTH - 8 * (STRB_WIDTH - 1);
   localparam ADDR_BITS = (DEPTH <= 1) ? 1 : $clog2(DEPTH);
 
   `ifdef PYC_TARGET_FPGA
@@ -70,20 +67,24 @@ module pyc_sync_mem_dp #(
       rdata0 <= {DATA_WIDTH{1'b0}};
       rdata1 <= {DATA_WIDTH{1'b0}};
     end else begin
-      // Write.
+      // Write with per-lane strobes; last lane may be narrower than 8 bits.
       if (wvalid) begin
         `ifndef SYNTHESIS
         if (wa < DEPTH) begin
-          for (i = 0; i < STRB_WIDTH; i = i + 1) begin
+          for (i = 0; i < STRB_WIDTH - 1; i = i + 1) begin
             if (wstrb[i])
               mem[wa][8 * i +: 8] <= wdata[8 * i +: 8];
           end
+          if (wstrb[STRB_WIDTH-1])
+            mem[wa][8*(STRB_WIDTH-1) +: LAST_LANE_BITS] <= wdata[8*(STRB_WIDTH-1) +: LAST_LANE_BITS];
         end
         `else
-        for (i = 0; i < STRB_WIDTH; i = i + 1) begin
+        for (i = 0; i < STRB_WIDTH - 1; i = i + 1) begin
           if (wstrb[i])
             mem[wa][8 * i +: 8] <= wdata[8 * i +: 8];
         end
+        if (wstrb[STRB_WIDTH-1])
+          mem[wa][8*(STRB_WIDTH-1) +: LAST_LANE_BITS] <= wdata[8*(STRB_WIDTH-1) +: LAST_LANE_BITS];
         `endif
       end
 

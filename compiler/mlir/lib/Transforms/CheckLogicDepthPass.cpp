@@ -35,7 +35,8 @@ static int64_t opCost(Operation *op) {
     return 0;
   if (isSequentialOp(op))
     return 0;
-  if (isa<pyc::WireOp, pyc::AliasOp, pyc::ConstantOp, pyc::CombOp, pyc::YieldOp, arith::ConstantOp>(op))
+  if (isa<pyc::WireOp, pyc::AliasOp, pyc::ResetActiveOp, pyc::ConstantOp, pyc::CombOp, pyc::YieldOp,
+          arith::ConstantOp>(op))
     return 0;
   return 1;
 }

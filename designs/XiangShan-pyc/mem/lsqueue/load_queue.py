@@ -32,11 +32,12 @@ from pycircuit import (
     compile_cycle_aware,
     mux,
     u,
+    wire_of,
 )
 from top.parameters import *
 
 
-def build_load_queue(
+def load_queue(
     m: CycleAwareCircuit,
     domain: CycleAwareDomain,
     *,
@@ -109,7 +110,7 @@ def build_load_queue(
     deq_idx = deq_ptr[0:idx_w]
 
     # Count for full/empty detection
-    count = cas(domain, (enq_ptr.wire - deq_ptr.wire)[0:ptr_w], cycle=0)
+    count = cas(domain, (wire_of(enq_ptr) - wire_of(deq_ptr))[0:ptr_w], cycle=0)
     full = count == cas(domain, m.const(size, width=ptr_w), cycle=0)
     empty = count == cas(domain, m.const(0, width=ptr_w), cycle=0)
 
@@ -133,13 +134,13 @@ def build_load_queue(
         entry_hit = lookup_valid & ev & eav & tag_match
         violation_found = mux(entry_hit, one1, violation_found)
 
-    m.output(f"{prefix}_violation_found", violation_found.wire)
+    m.output(f"{prefix}_violation_found", wire_of(violation_found))
     _out["violation_found"] = violation_found
-    m.output(f"{prefix}_can_enqueue", can_enq.wire)
+    m.output(f"{prefix}_can_enqueue", wire_of(can_enq))
     _out["can_enqueue"] = can_enq
-    m.output(f"{prefix}_enq_idx", enq_idx.wire)
+    m.output(f"{prefix}_enq_idx", wire_of(enq_idx))
     _out["enq_idx"] = enq_idx
-    m.output(f"{prefix}_count", count.wire)
+    m.output(f"{prefix}_count", wire_of(count))
     _out["count"] = count
 
     # ── domain.next() → Cycle 1: state updates ──────────────────────
@@ -171,7 +172,7 @@ def build_load_queue(
 
     # Pointer updates
     next_enq = mux(can_enq,
-                    cas(domain, (enq_ptr.wire + u(ptr_w, 1))[0:ptr_w], cycle=0),
+                    cas(domain, (wire_of(enq_ptr) + u(ptr_w, 1))[0:ptr_w], cycle=0),
                     enq_ptr)
     next_enq = mux(redirect_valid, deq_ptr, next_enq)
     next_enq = mux(flush, deq_ptr, next_enq)
@@ -179,7 +180,7 @@ def build_load_queue(
 
     deq_commit = commit_valid & (~empty)
     next_deq = mux(deq_commit,
-                    cas(domain, (deq_ptr.wire + u(ptr_w, 1))[0:ptr_w], cycle=0),
+                    cas(domain, (wire_of(deq_ptr) + u(ptr_w, 1))[0:ptr_w], cycle=0),
                     deq_ptr)
     deq_ptr <<= next_deq
 
@@ -189,11 +190,11 @@ def build_load_queue(
     return _out
 
 
-build_load_queue.__pycircuit_name__ = "load_queue"
+load_queue.__pycircuit_name__ = "load_queue"
 
 
 if __name__ == "__main__":
     print(compile_cycle_aware(
-        build_load_queue, name="load_queue", eager=True,
+        load_queue, name="load_queue", eager=True,
         size=8, addr_width=36,
     ).emit_mlir())

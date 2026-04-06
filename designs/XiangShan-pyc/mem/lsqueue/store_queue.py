@@ -33,11 +33,12 @@ from pycircuit import (
     compile_cycle_aware,
     mux,
     u,
+    wire_of,
 )
 from top.parameters import *
 
 
-def build_store_queue(
+def store_queue(
     m: CycleAwareCircuit,
     domain: CycleAwareDomain,
     *,
@@ -117,7 +118,7 @@ def build_store_queue(
     deq_idx = deq_ptr[0:idx_w]
     commit_idx = commit_ptr[0:idx_w]
 
-    count = cas(domain, (enq_ptr.wire - deq_ptr.wire)[0:ptr_w], cycle=0)
+    count = cas(domain, (wire_of(enq_ptr) - wire_of(deq_ptr))[0:ptr_w], cycle=0)
     full = count == cas(domain, m.const(size, width=ptr_w), cycle=0)
     empty = count == cas(domain, m.const(0, width=ptr_w), cycle=0)
 
@@ -163,21 +164,21 @@ def build_store_queue(
 
     drain_fire = drain_head_valid & sbuf_ready
 
-    m.output(f"{prefix}_fwd_hit", fwd_hit.wire)
+    m.output(f"{prefix}_fwd_hit", wire_of(fwd_hit))
     _out["fwd_hit"] = fwd_hit
-    m.output(f"{prefix}_fwd_data", fwd_data_out.wire)
+    m.output(f"{prefix}_fwd_data", wire_of(fwd_data_out))
     _out["fwd_data"] = fwd_data_out
-    m.output(f"{prefix}_can_enqueue", can_enq.wire)
+    m.output(f"{prefix}_can_enqueue", wire_of(can_enq))
     _out["can_enqueue"] = can_enq
-    m.output(f"{prefix}_enq_idx", enq_idx.wire)
+    m.output(f"{prefix}_enq_idx", wire_of(enq_idx))
     _out["enq_idx"] = enq_idx
-    m.output(f"{prefix}_count", count.wire)
+    m.output(f"{prefix}_count", wire_of(count))
     _out["count"] = count
-    m.output(f"{prefix}_sbuf_valid", drain_head_valid.wire)
+    m.output(f"{prefix}_sbuf_valid", wire_of(drain_head_valid))
     _out["sbuf_valid"] = drain_head_valid
-    m.output(f"{prefix}_sbuf_addr", drain_head_addr.wire)
+    m.output(f"{prefix}_sbuf_addr", wire_of(drain_head_addr))
     _out["sbuf_addr"] = drain_head_addr
-    m.output(f"{prefix}_sbuf_data", drain_head_data.wire)
+    m.output(f"{prefix}_sbuf_data", wire_of(drain_head_data))
     _out["sbuf_data"] = drain_head_data
 
     # ── domain.next() → Cycle 1: state updates ──────────────────────
@@ -215,18 +216,18 @@ def build_store_queue(
 
     # Pointer updates
     next_enq = mux(can_enq,
-                    cas(domain, (enq_ptr.wire + u(ptr_w, 1))[0:ptr_w], cycle=0),
+                    cas(domain, (wire_of(enq_ptr) + u(ptr_w, 1))[0:ptr_w], cycle=0),
                     enq_ptr)
     next_enq = mux(redirect_valid | flush, commit_ptr, next_enq)
     enq_ptr <<= next_enq
 
     next_deq = mux(drain_fire,
-                    cas(domain, (deq_ptr.wire + u(ptr_w, 1))[0:ptr_w], cycle=0),
+                    cas(domain, (wire_of(deq_ptr) + u(ptr_w, 1))[0:ptr_w], cycle=0),
                     deq_ptr)
     deq_ptr <<= next_deq
 
     next_cmt = mux(commit_valid,
-                    cas(domain, (commit_ptr.wire + u(ptr_w, 1))[0:ptr_w], cycle=0),
+                    cas(domain, (wire_of(commit_ptr) + u(ptr_w, 1))[0:ptr_w], cycle=0),
                     commit_ptr)
     commit_ptr <<= next_cmt
 
@@ -236,11 +237,11 @@ def build_store_queue(
     return _out
 
 
-build_store_queue.__pycircuit_name__ = "store_queue"
+store_queue.__pycircuit_name__ = "store_queue"
 
 
 if __name__ == "__main__":
     print(compile_cycle_aware(
-        build_store_queue, name="store_queue", eager=True,
+        store_queue, name="store_queue", eager=True,
         size=8, addr_width=36,
     ).emit_mlir())

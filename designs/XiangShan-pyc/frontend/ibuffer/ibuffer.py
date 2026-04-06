@@ -31,6 +31,7 @@ from pycircuit import (
     compile_cycle_aware,
     mux,
     u,
+    wire_of,
 )
 
 from top.parameters import (
@@ -50,7 +51,7 @@ DEQ_WIDTH = DECODE_WIDTH                    # 8   (decode width)
 PTR_WIDTH = (IBUFFER_SIZE - 1).bit_length() + 1  # extra bit for wrap-around
 
 
-def build_ibuffer(
+def ibuffer(
     m: CycleAwareCircuit,
     domain: CycleAwareDomain,
     *,
@@ -114,15 +115,15 @@ def build_ibuffer(
 
     # Number of valid entries = (enq_ptr - deq_ptr) mod (2*size), but since
     # ptr_w has the wrap bit, we can compute:
-    num_valid = cas(domain, (enq_ptr.wire - deq_ptr.wire)[0:cnt_w], cycle=0)
+    num_valid = cas(domain, (wire_of(enq_ptr) - wire_of(deq_ptr))[0:cnt_w], cycle=0)
 
-    num_free = cas(domain, (m.const(size, width=cnt_w) - num_valid.wire)[0:cnt_w], cycle=0)
+    num_free = cas(domain, (m.const(size, width=cnt_w) - wire_of(num_valid))[0:cnt_w], cycle=0)
 
     # Backpressure: ready if we have enough space for incoming instructions
     in_ready_comb = cas(domain, m.const(1, width=1), cycle=0)  # simplified: ready when not full
     is_full = num_valid == size_const
     in_ready_comb = mux(is_full, cas(domain, m.const(0, width=1), cycle=0), in_ready_comb)
-    m.output(f"{prefix}_in_ready", in_ready_comb.wire)
+    m.output(f"{prefix}_in_ready", wire_of(in_ready_comb))
     _out["in_ready"] = in_ready_comb
 
     # Enqueue fire
@@ -135,7 +136,7 @@ def build_ibuffer(
     # Produce up to deq_width outputs
     for i in range(deq_width):
         # Index for this dequeue slot
-        slot_ptr = cas(domain, (deq_ptr.wire + m.const(i, width=ptr_w))[0:ptr_w], cycle=0)
+        slot_ptr = cas(domain, (wire_of(deq_ptr) + m.const(i, width=ptr_w))[0:ptr_w], cycle=0)
         slot_idx = slot_ptr[0:idx_w]
 
         # Mux over storage to find the entry at slot_idx
@@ -158,10 +159,10 @@ def build_ibuffer(
 
         out_valid = has_entry & (~flush)
 
-        m.output(f"{prefix}_out_valid_{i}", out_valid.wire)
-        m.output(f"{prefix}_out_inst_{i}", out_inst.wire)
-        m.output(f"{prefix}_out_pc_{i}", out_pc.wire)
-        m.output(f"{prefix}_out_is_rvc_{i}", out_rvc.wire)
+        m.output(f"{prefix}_out_valid_{i}", wire_of(out_valid))
+        m.output(f"{prefix}_out_inst_{i}", wire_of(out_inst))
+        m.output(f"{prefix}_out_pc_{i}", wire_of(out_pc))
+        m.output(f"{prefix}_out_is_rvc_{i}", wire_of(out_rvc))
 
     # Count actual dequeues: number of consecutive valid outputs accepted
     num_deq = cas(domain, m.const(0, width=deq_cnt_w), cycle=0)
@@ -175,7 +176,7 @@ def build_ibuffer(
                       cas(domain, m.const(i + 1, width=deq_cnt_w), cycle=0),
                       num_deq)
 
-    m.output(f"{prefix}_num_valid", num_valid.wire)
+    m.output(f"{prefix}_num_valid", wire_of(num_valid))
     _out["num_valid"] = num_valid
 
     # ── domain.next() → Cycle 1: State updates ──────────────────────
@@ -183,7 +184,7 @@ def build_ibuffer(
 
     # Enqueue: write instructions into circular buffer
     for i in range(enq_width):
-        wr_ptr = cas(domain, (enq_ptr.wire + m.const(i, width=ptr_w))[0:ptr_w], cycle=0)
+        wr_ptr = cas(domain, (wire_of(enq_ptr) + m.const(i, width=ptr_w))[0:ptr_w], cycle=0)
         wr_idx = wr_ptr[0:idx_w]
         i_const_enq = cas(domain, m.const(i, width=enq_cnt_w), cycle=0)
         do_write = enq_fire & (i_const_enq < in_num)
@@ -196,12 +197,12 @@ def build_ibuffer(
             entry_valid[j].assign(mux(we, cas(domain, m.const(1, width=1), cycle=0), entry_valid[j]), when=we)
 
     # Update enq pointer
-    next_enq = cas(domain, (enq_ptr.wire + actual_enq.wire + u(ptr_w, 0))[0:ptr_w], cycle=0)
-    next_deq = cas(domain, (deq_ptr.wire + num_deq.wire + u(ptr_w, 0))[0:ptr_w], cycle=0)
+    next_enq = cas(domain, (wire_of(enq_ptr) + wire_of(actual_enq) + u(ptr_w, 0))[0:ptr_w], cycle=0)
+    next_deq = cas(domain, (wire_of(deq_ptr) + wire_of(num_deq) + u(ptr_w, 0))[0:ptr_w], cycle=0)
 
     # Invalidate dequeued entries
     for i in range(deq_width):
-        clr_ptr = cas(domain, (deq_ptr.wire + m.const(i, width=ptr_w))[0:ptr_w], cycle=0)
+        clr_ptr = cas(domain, (wire_of(deq_ptr) + m.const(i, width=ptr_w))[0:ptr_w], cycle=0)
         clr_idx = clr_ptr[0:idx_w]
         i_const_deq = cas(domain, m.const(i, width=deq_cnt_w), cycle=0)
         do_clear = i_const_deq < num_deq
@@ -220,11 +221,11 @@ def build_ibuffer(
     return _out
 
 
-build_ibuffer.__pycircuit_name__ = "ibuffer"
+ibuffer.__pycircuit_name__ = "ibuffer"
 
 
 if __name__ == "__main__":
     print(compile_cycle_aware(
-        build_ibuffer, name="ibuffer", eager=True,
+        ibuffer, name="ibuffer", eager=True,
         size=IBUFFER_SIZE, enq_width=ENQ_WIDTH, deq_width=DEQ_WIDTH,
     ).emit_mlir())

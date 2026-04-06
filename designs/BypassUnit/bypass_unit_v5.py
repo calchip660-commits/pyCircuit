@@ -9,6 +9,7 @@ from pycircuit import (
     compile_cycle_aware,
     mux,
     testbench,
+    wire_of,
 )
 
 PTYPE_C = 0
@@ -158,7 +159,7 @@ def _resolve_src(
     return out_data, out_hit, out_stage, out_lane
 
 
-def build_bypass_unit(
+def bypass_unit(
     m: CycleAwareCircuit,
     domain: CycleAwareDomain,
     *,
@@ -273,10 +274,10 @@ def build_bypass_unit(
             okey_s = f"i2{i}_{src}_sel_stage"
             okey_l = f"i2{i}_{src}_sel_lane"
 
-            m.output(f"{prefix}_{okey_d}", out_data.wire)
-            m.output(f"{prefix}_{okey_h}", out_hit.wire)
-            m.output(f"{prefix}_{okey_s}", out_stage.wire)
-            m.output(f"{prefix}_{okey_l}", out_lane.wire)
+            m.output(f"{prefix}_{okey_d}", wire_of(out_data))
+            m.output(f"{prefix}_{okey_h}", wire_of(out_hit))
+            m.output(f"{prefix}_{okey_s}", wire_of(out_stage))
+            m.output(f"{prefix}_{okey_l}", wire_of(out_lane))
 
             _out[okey_d] = out_data
             _out[okey_h] = out_hit
@@ -286,7 +287,7 @@ def build_bypass_unit(
     return _out
 
 
-build_bypass_unit.__pycircuit_name__ = "bypass_unit"
+bypass_unit.__pycircuit_name__ = "bypass_unit"
 
 
 @testbench
@@ -300,7 +301,7 @@ def tb(t: Tb) -> None:
 if __name__ == "__main__":
     print(
         compile_cycle_aware(
-            build_bypass_unit,
+            bypass_unit,
             name="bypass_unit",
             eager=True,
             lanes=8,

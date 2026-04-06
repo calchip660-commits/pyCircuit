@@ -38,6 +38,7 @@ from pycircuit import (
     compile_cycle_aware,
     mux,
     u,
+    wire_of,
 )
 
 from top.parameters import (
@@ -49,7 +50,7 @@ from top.parameters import (
 FU_TYPE_WIDTH = 3
 
 
-def build_issue_queue(
+def issue_queue(
     m: CycleAwareCircuit,
     domain: CycleAwareDomain,
     *,
@@ -208,10 +209,14 @@ def build_issue_queue(
             sel_fu = mux(cand[i], ent_fu_type[i], sel_fu)
 
         issue_valid = sel_valid & (~flush)
-        m.output(f"{prefix}_issue_valid_{p}", issue_valid.wire)
-        m.output(f"{prefix}_issue_pdest_{p}", sel_pdest.wire)
-        m.output(f"{prefix}_issue_rob_idx_{p}", sel_rob.wire)
-        m.output(f"{prefix}_issue_fu_type_{p}", sel_fu.wire)
+        m.output(f"{prefix}_issue_valid_{p}", wire_of(issue_valid))
+        _out[f"issue_valid_{p}"] = issue_valid
+        m.output(f"{prefix}_issue_pdest_{p}", wire_of(sel_pdest))
+        _out[f"issue_pdest_{p}"] = sel_pdest
+        m.output(f"{prefix}_issue_rob_idx_{p}", wire_of(sel_rob))
+        _out[f"issue_rob_idx_{p}"] = sel_rob
+        m.output(f"{prefix}_issue_fu_type_{p}", wire_of(sel_fu))
+        _out[f"issue_fu_type_{p}"] = sel_fu
 
         # Mark as issued for next port's masking
         for i in range(entries):
@@ -243,13 +248,15 @@ def build_issue_queue(
     ONE_CNT = cas(domain, m.const(1, width=cnt_w), cycle=0)
     for i in range(entries):
         free_cnt = mux(~ent_valid[i],
-                       cas(domain, (free_cnt.wire + ONE_CNT.wire)[0:cnt_w], cycle=0),
+                       cas(domain, (wire_of(free_cnt) + wire_of(ONE_CNT))[0:cnt_w], cycle=0),
                        free_cnt)
 
     enq_cnt_const = cas(domain, m.const(enq_ports, width=cnt_w), cycle=0)
     has_room = ~(free_cnt < enq_cnt_const)
-    m.output(f"{prefix}_ready", (has_room & (~flush)).wire)
-    m.output(f"{prefix}_free_count", free_cnt.wire)
+    ready = has_room & (~flush)
+    m.output(f"{prefix}_ready", wire_of(ready))
+    _out["ready"] = ready
+    m.output(f"{prefix}_free_count", wire_of(free_cnt))
     _out["free_count"] = free_cnt
 
     # ── domain.next() → Cycle 1: state updates ──────────────────
@@ -301,12 +308,12 @@ def build_issue_queue(
     return _out
 
 
-build_issue_queue.__pycircuit_name__ = "issue_queue"
+issue_queue.__pycircuit_name__ = "issue_queue"
 
 
 if __name__ == "__main__":
     print(compile_cycle_aware(
-        build_issue_queue, name="issue_queue", eager=True,
+        issue_queue, name="issue_queue", eager=True,
         entries=4, enq_ports=2, issue_ports=1,
         wb_ports=2, ptag_w=4, rob_idx_w=4, fu_type_width=3,
     ).emit_mlir())

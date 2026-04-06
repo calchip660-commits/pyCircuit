@@ -6,6 +6,7 @@ from pycircuit import (
     cas,
     compile_cycle_aware,
     mux,
+    wire_of,
 )
 
 
@@ -47,11 +48,11 @@ def build(m: CycleAwareCircuit, domain: CycleAwareDomain) -> None:
         en.append(en_i)
         pref = pref & a2_v[i]
 
-    m.output("in_ready", in_ready)
-    m.output("out0_valid", out0_valid)
-    m.output("out0_data", d0[0])
-    m.output("out1_valid", out1_valid)
-    m.output("out1_data", d0[1])
+    m.output("in_ready", wire_of(in_ready))
+    m.output("out0_valid", wire_of(out0_valid))
+    m.output("out0_data", wire_of(d0[0]))
+    m.output("out1_valid", wire_of(out1_valid))
+    m.output("out1_data", wire_of(d0[1]))
 
     domain.next()
 

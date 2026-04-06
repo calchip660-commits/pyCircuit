@@ -33,6 +33,7 @@ from pycircuit import (
     compile_cycle_aware,
     mux,
     u,
+    wire_of,
 )
 
 from top.parameters import (
@@ -49,7 +50,7 @@ from top.parameters import (
 ATTR_WIDTH = BRANCH_TYPE_WIDTH + RAS_ACTION_WIDTH
 
 
-def build_ubtb(
+def ubtb(
     m: CycleAwareCircuit,
     domain: CycleAwareDomain,
     *,
@@ -141,21 +142,21 @@ def build_ubtb(
     pc_upper = s0_pc[target_width : pc_width]
     s0_full_target = cas(
         domain,
-        (pc_upper.wire << target_width) | (s0_hit_target.wire + u(pc_width, 0)),
+        (wire_of(pc_upper) << target_width) | (wire_of(s0_hit_target) + u(pc_width, 0)),
         cycle=0,
     )[0:pc_width]
 
     # ── Prediction outputs ────────────────────────────────────────────
     pred_valid = s0_hit & s0_fire & enable
-    m.output(f"{prefix}_pred_valid", pred_valid.wire)
+    m.output(f"{prefix}_pred_valid", wire_of(pred_valid))
     _out["pred_valid"] = pred_valid
-    m.output(f"{prefix}_pred_taken", pred_valid.wire)
+    m.output(f"{prefix}_pred_taken", wire_of(pred_valid))
     _out["pred_taken"] = pred_valid
-    m.output(f"{prefix}_pred_target", s0_full_target.wire)
+    m.output(f"{prefix}_pred_target", wire_of(s0_full_target))
     _out["pred_target"] = s0_full_target
-    m.output(f"{prefix}_pred_cfi_pos", s0_hit_cfi.wire)
+    m.output(f"{prefix}_pred_cfi_pos", wire_of(s0_hit_cfi))
     _out["pred_cfi_pos"] = s0_hit_cfi
-    m.output(f"{prefix}_pred_attr", s0_hit_attr.wire)
+    m.output(f"{prefix}_pred_attr", wire_of(s0_hit_attr))
     _out["pred_attr"] = s0_hit_attr
 
     # ── Training: tag / target extraction ─────────────────────────────
@@ -206,9 +207,9 @@ def build_ubtb(
     is_zero = t0_old_useful == zero_useful
 
     useful_inc = mux(is_max, useful_max_c,
-                     cas(domain, (t0_old_useful.wire + useful_one.wire)[0:useful_cnt_width], cycle=0))
+                     cas(domain, (wire_of(t0_old_useful) + wire_of(useful_one))[0:useful_cnt_width], cycle=0))
     useful_dec = mux(is_zero, zero_useful,
-                     cas(domain, (t0_old_useful.wire - useful_one.wire)[0:useful_cnt_width], cycle=0))
+                     cas(domain, (wire_of(t0_old_useful) - wire_of(useful_one))[0:useful_cnt_width], cycle=0))
 
     target_same = t0_old_target == t0_target_lower
 
@@ -227,11 +228,11 @@ def build_ubtb(
     return _out
 
 
-build_ubtb.__pycircuit_name__ = "ubtb"
+ubtb.__pycircuit_name__ = "ubtb"
 
 
 if __name__ == "__main__":
     print(compile_cycle_aware(
-        build_ubtb, name="ubtb", eager=True,
+        ubtb, name="ubtb", eager=True,
         entries=UBTB_NUM_ENTRIES,
     ).emit_mlir())

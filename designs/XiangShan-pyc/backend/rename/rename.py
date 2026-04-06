@@ -30,6 +30,7 @@ from pycircuit import (
     compile_cycle_aware,
     mux,
     u,
+    wire_of,
 )
 
 from top.parameters import (
@@ -44,7 +45,7 @@ from top.parameters import (
 LREG_WIDTH = max(1, (INT_LOGIC_REGS - 1).bit_length())
 
 
-def build_rename(
+def rename(
     m: CycleAwareCircuit,
     domain: CycleAwareDomain,
     *,
@@ -165,7 +166,7 @@ def build_rename(
         old_pdest.append(opd)
 
     # ── Cycle 0: FreeList occupancy & allocation ─────────────────
-    fl_count = cas(domain, (fl_tail.wire - fl_head.wire)[0:fl_cnt_w], cycle=0)
+    fl_count = cas(domain, (wire_of(fl_tail) - wire_of(fl_head))[0:fl_cnt_w], cycle=0)
 
     # Which slots need a new physical reg? (valid, has dest, dest != x0)
     need_alloc = []
@@ -181,12 +182,12 @@ def build_rename(
     for i in range(rename_width):
         alloc_off.append(rn_run)
         rn_run = cas(domain,
-                     (rn_run.wire + mux(need_alloc[i], ONE_RN, ZERO_RN).wire)[0:rn_cnt_w],
+                     (wire_of(rn_run) + wire_of(mux(need_alloc[i], ONE_RN, ZERO_RN)))[0:rn_cnt_w],
                      cycle=0)
     total_alloc = rn_run
 
     # Widen total_alloc to fl_cnt_w for comparison with fl_count
-    alloc_wide = cas(domain, (total_alloc.wire + u(fl_cnt_w, 0))[0:fl_cnt_w], cycle=0)
+    alloc_wide = cas(domain, (wire_of(total_alloc) + u(fl_cnt_w, 0))[0:fl_cnt_w], cycle=0)
     can_alloc = ~(fl_count < alloc_wide)
 
     rename_fire = can_alloc & (~stall) & (~flush)
@@ -195,7 +196,7 @@ def build_rename(
     pdest = []
     for i in range(rename_width):
         ptr = cas(domain,
-                  (fl_head.wire + alloc_off[i].wire + u(fl_ptr_w, 0))[0:fl_ptr_w],
+                  (wire_of(fl_head) + wire_of(alloc_off[i]) + u(fl_ptr_w, 0))[0:fl_ptr_w],
                   cycle=0)
         idx = ptr[0:fl_idx_w]
         v = ZERO_P
@@ -219,13 +220,20 @@ def build_rename(
 
     # ── Cycle 0: Outputs ─────────────────────────────────────────
     for i in range(rename_width):
-        m.output(f"{prefix}_out_valid_{i}", (in_valid[i] & rename_fire).wire)
-        m.output(f"{prefix}_out_pdest_{i}", mux(need_alloc[i], pdest[i], ZERO_P).wire)
-        m.output(f"{prefix}_out_psrc1_{i}", psrc1[i].wire)
-        m.output(f"{prefix}_out_psrc2_{i}", psrc2[i].wire)
-        m.output(f"{prefix}_out_old_pdest_{i}", old_pdest[i].wire)
+        out_valid_i = in_valid[i] & rename_fire
+        out_pdest_i = mux(need_alloc[i], pdest[i], ZERO_P)
+        m.output(f"{prefix}_out_valid_{i}", wire_of(out_valid_i))
+        _out[f"out_valid_{i}"] = out_valid_i
+        m.output(f"{prefix}_out_pdest_{i}", wire_of(out_pdest_i))
+        _out[f"out_pdest_{i}"] = out_pdest_i
+        m.output(f"{prefix}_out_psrc1_{i}", wire_of(psrc1[i]))
+        _out[f"out_psrc1_{i}"] = psrc1[i]
+        m.output(f"{prefix}_out_psrc2_{i}", wire_of(psrc2[i]))
+        _out[f"out_psrc2_{i}"] = psrc2[i]
+        m.output(f"{prefix}_out_old_pdest_{i}", wire_of(old_pdest[i]))
+        _out[f"out_old_pdest_{i}"] = old_pdest[i]
 
-    m.output(f"{prefix}_can_alloc", can_alloc.wire)
+    m.output(f"{prefix}_can_alloc", wire_of(can_alloc))
     _out["can_alloc"] = can_alloc
 
     # ── domain.next() → Cycle 1: State updates ──────────────────
@@ -257,14 +265,14 @@ def build_rename(
     for i in range(commit_width):
         cm_off.append(cm_run)
         cm_run = cas(domain,
-                     (cm_run.wire + mux(commit_valid[i] & commit_rd_valid[i],
-                                        ONE_CM, ZERO_CM).wire)[0:cm_cnt_w],
+                     (wire_of(cm_run) + wire_of(mux(commit_valid[i] & commit_rd_valid[i],
+                                        ONE_CM, ZERO_CM)))[0:cm_cnt_w],
                      cycle=0)
     total_free = cm_run
 
     for i in range(commit_width):
         wptr = cas(domain,
-                   (fl_tail.wire + cm_off[i].wire + u(fl_ptr_w, 0))[0:fl_ptr_w],
+                   (wire_of(fl_tail) + wire_of(cm_off[i]) + u(fl_ptr_w, 0))[0:fl_ptr_w],
                    cycle=0)
         widx = wptr[0:fl_idx_w]
         do_free = commit_valid[i] & commit_rd_valid[i]
@@ -274,7 +282,7 @@ def build_rename(
 
     # ── FreeList head (priority: advance < redirect < flush) ─────
     adv_head = cas(domain,
-                   (fl_head.wire + total_alloc.wire + u(fl_ptr_w, 0))[0:fl_ptr_w],
+                   (wire_of(fl_head) + wire_of(total_alloc) + u(fl_ptr_w, 0))[0:fl_ptr_w],
                    cycle=0)
     h = mux(rename_fire & (~redirect_valid) & (~flush), adv_head, fl_head)
     for s in range(snapshot_num):
@@ -286,7 +294,7 @@ def build_rename(
 
     # ── FreeList tail (advance on commit, reset on flush) ────────
     adv_tail = cas(domain,
-                   (fl_tail.wire + total_free.wire + u(fl_ptr_w, 0))[0:fl_ptr_w],
+                   (wire_of(fl_tail) + wire_of(total_free) + u(fl_ptr_w, 0))[0:fl_ptr_w],
                    cycle=0)
     fl_tail <<= mux(flush,
                      cas(domain, m.const(fl_init_count, width=fl_ptr_w), cycle=0),
@@ -302,7 +310,7 @@ def build_rename(
             snap_rat[s][j].assign(rat[j], when=sw)
 
     nxt_snap = cas(domain,
-                   (snap_next.wire + m.const(1, width=snap_id_w))[0:snap_id_w],
+                   (wire_of(snap_next) + m.const(1, width=snap_id_w))[0:snap_id_w],
                    cycle=0)
     snap_next <<= mux(flush,
                        cas(domain, m.const(0, width=snap_id_w), cycle=0),
@@ -310,12 +318,12 @@ def build_rename(
     return _out
 
 
-build_rename.__pycircuit_name__ = "rename"
+rename.__pycircuit_name__ = "rename"
 
 
 if __name__ == "__main__":
     print(compile_cycle_aware(
-        build_rename, name="rename", eager=True,
+        rename, name="rename", eager=True,
         rename_width=2, int_phys_regs=16, int_logic_regs=8,
         commit_width=2, snapshot_num=2,
     ).emit_mlir())

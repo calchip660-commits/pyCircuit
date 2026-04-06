@@ -31,6 +31,7 @@ from pycircuit import (
     compile_cycle_aware,
     mux,
     u,
+    wire_of,
 )
 
 from top.parameters import XLEN
@@ -46,7 +47,7 @@ CLINT_TIMER_WIDTH = 64
 #  PLIC — Platform-Level Interrupt Controller (stub)
 # ═══════════════════════════════════════════════════════════════════
 
-def build_plic(
+def plic(
     m: CycleAwareCircuit,
     domain: CycleAwareDomain,
     *,
@@ -111,9 +112,9 @@ def build_plic(
         any_irq = any_irq | take
 
     # ── Outputs ──────────────────────────────────────────────────
-    m.output(f"{prefix}_irq_out", any_irq.wire)
+    m.output(f"{prefix}_irq_out", wire_of(any_irq))
     _out["irq_out"] = any_irq
-    m.output(f"{prefix}_irq_id", best_id.wire)
+    m.output(f"{prefix}_irq_id", wire_of(best_id))
     _out["irq_id"] = best_id
 
     # ── Cycle 1: State updates ───────────────────────────────────
@@ -138,14 +139,14 @@ def build_plic(
     return _out
 
 
-build_plic.__pycircuit_name__ = "plic"
+plic.__pycircuit_name__ = "plic"
 
 
 # ═══════════════════════════════════════════════════════════════════
 #  CLINT — Core Local Interruptor (stub)
 # ═══════════════════════════════════════════════════════════════════
 
-def build_clint(
+def clint(
     m: CycleAwareCircuit,
     domain: CycleAwareDomain,
     *,
@@ -189,11 +190,11 @@ def build_clint(
     mtip = ~time_lt_cmp
 
     # ── Outputs ──────────────────────────────────────────────────
-    m.output(f"{prefix}_mtip", mtip.wire)
+    m.output(f"{prefix}_mtip", wire_of(mtip))
     _out["mtip"] = mtip
-    m.output(f"{prefix}_msip", msip_reg.wire)
+    m.output(f"{prefix}_msip", wire_of(msip_reg))
     _out["msip"] = msip_reg
-    m.output(f"{prefix}_mtime_out", mtime.wire)
+    m.output(f"{prefix}_mtime_out", wire_of(mtime))
     _out["mtime_out"] = mtime
 
     # ── Cycle 1: State updates ───────────────────────────────────
@@ -202,7 +203,7 @@ def build_clint(
     one = _const(1, timer_width)
 
     # mtime increments every cycle (free-running counter)
-    next_mtime = cas(domain, (mtime.wire + one.wire)[0:timer_width], cycle=0)
+    next_mtime = cas(domain, (wire_of(mtime) + wire_of(one))[0:timer_width], cycle=0)
     mtime <<= next_mtime
 
     # mtimecmp updated on write
@@ -213,7 +214,7 @@ def build_clint(
     return _out
 
 
-build_clint.__pycircuit_name__ = "clint"
+clint.__pycircuit_name__ = "clint"
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -223,12 +224,12 @@ build_clint.__pycircuit_name__ = "clint"
 if __name__ == "__main__":
     print("=== PLIC ===")
     print(compile_cycle_aware(
-        build_plic, name="plic", eager=True,
+        plic, name="plic", eager=True,
         num_sources=8, num_targets=2, prio_width=PLIC_PRIO_WIDTH,
     ).emit_mlir())
 
     print("\n=== CLINT ===")
     print(compile_cycle_aware(
-        build_clint, name="clint", eager=True,
+        clint, name="clint", eager=True,
         timer_width=CLINT_TIMER_WIDTH,
     ).emit_mlir())

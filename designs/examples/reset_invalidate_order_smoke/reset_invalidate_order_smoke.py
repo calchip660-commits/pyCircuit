@@ -9,6 +9,7 @@ from pycircuit import (
     compile_cycle_aware,
     mux,
     probe,
+    wire_of,
 )
 
 
@@ -16,7 +17,7 @@ def build(m: CycleAwareCircuit, domain: CycleAwareDomain, width: int = 8) -> Non
     en = cas(domain, m.input("en", width=1), cycle=0)
 
     q = domain.signal(width=width, reset_value=0, name="q")
-    m.output("y", q)
+    m.output("y", wire_of(q))
 
     domain.next()
     q.assign(q + 1, when=en)

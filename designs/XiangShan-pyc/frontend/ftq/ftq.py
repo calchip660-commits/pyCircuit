@@ -32,6 +32,7 @@ from pycircuit import (
     compile_cycle_aware,
     mux,
     u,
+    wire_of,
 )
 
 from top.parameters import (
@@ -45,7 +46,7 @@ BPU_RUN_AHEAD_DISTANCE = 8
 CFI_OFFSET_WIDTH = max(1, (FETCH_BLOCK_INST_NUM - 1).bit_length())
 
 
-def build_ftq(
+def ftq(
     m: CycleAwareCircuit,
     domain: CycleAwareDomain,
     *,
@@ -140,16 +141,16 @@ def build_ftq(
     commit_idx = commit_ptr[0:idx_w]
 
     # Modular distances (wrap bit disambiguates full vs empty)
-    dist_bpu_commit = cas(domain, (bpu_ptr.wire - commit_ptr.wire)[0:cnt_w], cycle=0)
-    dist_bpu_ifu = cas(domain, (bpu_ptr.wire - ifu_ptr.wire)[0:cnt_w], cycle=0)
-    dist_ifu_commit = cas(domain, (ifu_ptr.wire - commit_ptr.wire)[0:cnt_w], cycle=0)
+    dist_bpu_commit = cas(domain, (wire_of(bpu_ptr) - wire_of(commit_ptr))[0:cnt_w], cycle=0)
+    dist_bpu_ifu = cas(domain, (wire_of(bpu_ptr) - wire_of(ifu_ptr))[0:cnt_w], cycle=0)
+    dist_ifu_commit = cas(domain, (wire_of(ifu_ptr) - wire_of(commit_ptr))[0:cnt_w], cycle=0)
 
     # BPU backpressure:
     #   ready = (bpu-commit distance < size) & (bpu-ifu distance < run_ahead) & ~redirect
     not_full = dist_bpu_commit < size_c
     not_too_far = dist_bpu_ifu < ahead_c
     bpu_ready = not_full & not_too_far & (~redirect_valid)
-    m.output(f"{prefix}_bpu_in_ready", bpu_ready.wire)
+    m.output(f"{prefix}_bpu_in_ready", wire_of(bpu_ready))
     _out["bpu_in_ready"] = bpu_ready
 
     # BPU enqueue fires when valid, ready, and NOT an S3 override
@@ -165,7 +166,7 @@ def build_ftq(
     )
     ifu_space_ok = dist_ifu_commit < size_m1_c
     ifu_req_valid_comb = has_entries & ifu_space_ok & (~redirect_valid)
-    m.output(f"{prefix}_ifu_req_valid", ifu_req_valid_comb.wire)
+    m.output(f"{prefix}_ifu_req_valid", wire_of(ifu_req_valid_comb))
     _out["ifu_req_valid"] = ifu_req_valid_comb
 
     # Read fetch target from entry at ifu_ptr (priority-mux over all entries)
@@ -181,23 +182,23 @@ def build_ftq(
         ifu_out_tkn = mux(hit, entry_taken[j], ifu_out_tkn)
         ifu_out_cfi = mux(hit, entry_cfi_off[j], ifu_out_cfi)
 
-    m.output(f"{prefix}_ifu_req_start_pc", ifu_out_pc.wire)
+    m.output(f"{prefix}_ifu_req_start_pc", wire_of(ifu_out_pc))
     _out["ifu_req_start_pc"] = ifu_out_pc
-    m.output(f"{prefix}_ifu_req_target", ifu_out_tgt.wire)
+    m.output(f"{prefix}_ifu_req_target", wire_of(ifu_out_tgt))
     _out["ifu_req_target"] = ifu_out_tgt
-    m.output(f"{prefix}_ifu_req_taken", ifu_out_tkn.wire)
+    m.output(f"{prefix}_ifu_req_taken", wire_of(ifu_out_tkn))
     _out["ifu_req_taken"] = ifu_out_tkn
-    m.output(f"{prefix}_ifu_req_cfi_offset", ifu_out_cfi.wire)
+    m.output(f"{prefix}_ifu_req_cfi_offset", wire_of(ifu_out_cfi))
     _out["ifu_req_cfi_offset"] = ifu_out_cfi
-    m.output(f"{prefix}_ifu_req_ftq_idx", ifu_idx.wire)
+    m.output(f"{prefix}_ifu_req_ftq_idx", wire_of(ifu_idx))
     _out["ifu_req_ftq_idx"] = ifu_idx
 
     ifu_fire = ifu_req_valid_comb & ifu_req_ready
 
     # Expose pointer indices
-    m.output(f"{prefix}_bpu_ptr_out", bpu_idx.wire)
+    m.output(f"{prefix}_bpu_ptr_out", wire_of(bpu_idx))
     _out["bpu_ptr_out"] = bpu_idx
-    m.output(f"{prefix}_commit_ptr_out", commit_idx.wire)
+    m.output(f"{prefix}_commit_ptr_out", wire_of(commit_idx))
     _out["commit_ptr_out"] = commit_idx
 
     # ── domain.next() → Cycle 1: State updates ──────────────────────
@@ -241,24 +242,24 @@ def build_ftq(
     # -- Pointer updates --
 
     # BPU: S3 override → s3_ptr+1 ; normal enqueue → bpu_ptr+1 ; else hold
-    next_bpu_enq = cas(domain, (bpu_ptr.wire + one.wire)[0:ptr_w], cycle=0)
-    s3_next = cas(domain, (bpu_s3_ptr.wire + one.wire)[0:ptr_w], cycle=0)
+    next_bpu_enq = cas(domain, (wire_of(bpu_ptr) + wire_of(one))[0:ptr_w], cycle=0)
+    s3_next = cas(domain, (wire_of(bpu_s3_ptr) + wire_of(one))[0:ptr_w], cycle=0)
     next_bpu = mux(s3_fire, s3_next, mux(bpu_enq_fire, next_bpu_enq, bpu_ptr))
 
     # IFU: advance on fire
-    next_ifu_inc = cas(domain, (ifu_ptr.wire + one.wire)[0:ptr_w], cycle=0)
+    next_ifu_inc = cas(domain, (wire_of(ifu_ptr) + wire_of(one))[0:ptr_w], cycle=0)
     next_ifu = mux(ifu_fire, next_ifu_inc, ifu_ptr)
 
     # IFU writeback: advance on writeback
-    next_wb_inc = cas(domain, (ifu_wb_ptr.wire + one.wire)[0:ptr_w], cycle=0)
+    next_wb_inc = cas(domain, (wire_of(ifu_wb_ptr) + wire_of(one))[0:ptr_w], cycle=0)
     next_ifu_wb = mux(ifu_wb_valid, next_wb_inc, ifu_wb_ptr)
 
     # Commit: advance on commit
-    next_comm_inc = cas(domain, (commit_ptr.wire + one.wire)[0:ptr_w], cycle=0)
+    next_comm_inc = cas(domain, (wire_of(commit_ptr) + wire_of(one))[0:ptr_w], cycle=0)
     next_commit = mux(commit_valid, next_comm_inc, commit_ptr)
 
     # Redirect: roll back bpu, ifu, ifu_wb to (redirect_ftq_idx + 1)
-    redir_new_ptr = cas(domain, (redirect_ftq_idx.wire + one.wire)[0:ptr_w], cycle=0)
+    redir_new_ptr = cas(domain, (wire_of(redirect_ftq_idx) + wire_of(one))[0:ptr_w], cycle=0)
 
     # S3 override also rolls back ifu/ifu_wb if they went past the override point
     s3_rollback_ifu = s3_fire & (dist_bpu_ifu == zero_cnt)
@@ -270,11 +271,11 @@ def build_ftq(
     return _out
 
 
-build_ftq.__pycircuit_name__ = "ftq"
+ftq.__pycircuit_name__ = "ftq"
 
 
 if __name__ == "__main__":
     print(compile_cycle_aware(
-        build_ftq, name="ftq", eager=True,
+        ftq, name="ftq", eager=True,
         size=FTQ_SIZE, pc_width=PC_WIDTH,
     ).emit_mlir())

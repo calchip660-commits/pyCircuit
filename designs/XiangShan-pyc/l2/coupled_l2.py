@@ -31,6 +31,7 @@ from pycircuit import (
     compile_cycle_aware,
     mux,
     u,
+    wire_of,
 )
 
 from top.parameters import (
@@ -50,7 +51,7 @@ TILELINK_OP_ACQUIRE  = 0b010
 TILELINK_OP_RELEASE  = 0b011
 
 
-def build_coupled_l2(
+def coupled_l2(
     m: CycleAwareCircuit,
     domain: CycleAwareDomain,
     *,
@@ -157,12 +158,12 @@ def build_coupled_l2(
     # Request buffer occupancy
     wr_idx = buf_wr_ptr[0:buf_idx_w]
     rd_idx = buf_rd_ptr[0:buf_idx_w]
-    buf_count = cas(domain, (buf_wr_ptr.wire - buf_rd_ptr.wire)[0:buf_cnt_w], cycle=0)
+    buf_count = cas(domain, (wire_of(buf_wr_ptr) - wire_of(buf_rd_ptr))[0:buf_cnt_w], cycle=0)
     buf_full  = buf_count == _const(req_buf_entries, buf_cnt_w)
     buf_empty = buf_count == _const(0, buf_cnt_w)
 
     up_a_ready_comb = (~buf_full) & (~ZERO_1)  # ready when not full
-    m.output(f"{prefix}_up_a_ready", up_a_ready_comb.wire)
+    m.output(f"{prefix}_up_a_ready", wire_of(up_a_ready_comb))
     _out["up_a_ready"] = up_a_ready_comb
 
     enq_fire = up_a_valid & up_a_ready_comb
@@ -198,25 +199,25 @@ def build_coupled_l2(
 
     # ── Outputs: upstream D-channel (response to core) ───────────
     up_d_valid_comb = can_issue & any_hit & (~buf_empty)
-    m.output(f"{prefix}_up_d_valid", up_d_valid_comb.wire)
+    m.output(f"{prefix}_up_d_valid", wire_of(up_d_valid_comb))
     _out["up_d_valid"] = up_d_valid_comb
-    m.output(f"{prefix}_up_d_data", hit_data.wire)
+    m.output(f"{prefix}_up_d_data", wire_of(hit_data))
     _out["up_d_data"] = hit_data
 
     # ── Outputs: downstream A-channel (miss request to L3) ───────
     need_miss = can_issue & (~any_hit) & (~mshr_valid)
     down_a_valid_comb = need_miss & (~buf_empty)
-    m.output(f"{prefix}_down_a_valid", down_a_valid_comb.wire)
+    m.output(f"{prefix}_down_a_valid", wire_of(down_a_valid_comb))
     _out["down_a_valid"] = down_a_valid_comb
-    m.output(f"{prefix}_down_a_address", hd_addr.wire)
+    m.output(f"{prefix}_down_a_address", wire_of(hd_addr))
     _out["down_a_address"] = hd_addr
-    m.output(f"{prefix}_down_a_opcode", hd_op.wire)
+    m.output(f"{prefix}_down_a_opcode", wire_of(hd_op))
     _out["down_a_opcode"] = hd_op
 
     miss_fire = down_a_valid_comb & down_a_ready
 
     # Downstream D ready (we accept refill when MSHR valid)
-    m.output(f"{prefix}_down_d_ready", mshr_valid.wire)
+    m.output(f"{prefix}_down_d_ready", wire_of(mshr_valid))
     _out["down_d_ready"] = mshr_valid
     refill_fire = down_d_valid & mshr_valid
 
@@ -224,9 +225,9 @@ def build_coupled_l2(
     pipe_advance = (up_d_valid_comb | miss_fire) & (~buf_empty)
 
     # Status outputs
-    m.output(f"{prefix}_mshr_busy", mshr_valid.wire)
+    m.output(f"{prefix}_mshr_busy", wire_of(mshr_valid))
     _out["mshr_busy"] = mshr_valid
-    m.output(f"{prefix}_buf_count", buf_count.wire)
+    m.output(f"{prefix}_buf_count", wire_of(buf_count))
     _out["buf_count"] = buf_count
 
     # ── domain.next() → Cycle 1: State updates ──────────────────
@@ -245,7 +246,7 @@ def build_coupled_l2(
         buf_data_st[j].assign(mux(we, up_a_data, buf_data_st[j]), when=we)
         buf_valid[j].assign(mux(we, ONE_1, buf_valid[j]), when=we)
 
-    next_wr = cas(domain, (buf_wr_ptr.wire + one_buf.wire)[0:buf_cnt_w], cycle=0)
+    next_wr = cas(domain, (wire_of(buf_wr_ptr) + wire_of(one_buf))[0:buf_cnt_w], cycle=0)
     buf_wr_ptr <<= mux(enq_fire, next_wr, buf_wr_ptr)
 
     # -- Request buffer dequeue --
@@ -255,7 +256,7 @@ def build_coupled_l2(
         de = pipe_advance & hit
         buf_valid[j].assign(mux(de, ZERO_1, buf_valid[j]), when=de)
 
-    next_rd = cas(domain, (buf_rd_ptr.wire + one_buf.wire)[0:buf_cnt_w], cycle=0)
+    next_rd = cas(domain, (wire_of(buf_rd_ptr) + wire_of(one_buf))[0:buf_cnt_w], cycle=0)
     buf_rd_ptr <<= mux(pipe_advance, next_rd, buf_rd_ptr)
 
     # -- MSHR allocation on miss --
@@ -278,12 +279,12 @@ def build_coupled_l2(
     return _out
 
 
-build_coupled_l2.__pycircuit_name__ = "coupled_l2"
+coupled_l2.__pycircuit_name__ = "coupled_l2"
 
 
 if __name__ == "__main__":
     print(compile_cycle_aware(
-        build_coupled_l2, name="coupled_l2", eager=True,
+        coupled_l2, name="coupled_l2", eager=True,
         sets=L2_SETS, ways=L2_WAYS, addr_width=PADDR_BITS_MAX,
         data_width=CACHE_LINE_SIZE,
     ).emit_mlir())

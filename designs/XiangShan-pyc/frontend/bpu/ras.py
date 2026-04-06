@@ -34,12 +34,13 @@ from pycircuit import (
     compile_cycle_aware,
     mux,
     u,
+    wire_of,
 )
 
 from top.parameters import PC_WIDTH, RAS_COMMIT_STACK_SIZE, RAS_SPEC_QUEUE_SIZE
 
 
-def build_ras(
+def ras(
     m: CycleAwareCircuit,
     domain: CycleAwareDomain,
     *,
@@ -95,8 +96,8 @@ def build_ras(
     spec_ctr = [domain.signal(width=ctr_width, reset_value=0, name=f"{prefix}_sc_{i}") for i in range(spec_size)]
     sp = domain.signal(width=spec_ptr_w, reset_value=0, name=f"{prefix}_spec_sp")
 
-    sp_m1 = cas(domain, (sp.wire - u(spec_ptr_w, 1))[0:spec_ptr_w], cycle=0)
-    sp_p1 = cas(domain, (sp.wire + u(spec_ptr_w, 1))[0:spec_ptr_w], cycle=0)
+    sp_m1 = cas(domain, (wire_of(sp) - u(spec_ptr_w, 1))[0:spec_ptr_w], cycle=0)
+    sp_p1 = cas(domain, (wire_of(sp) + u(spec_ptr_w, 1))[0:spec_ptr_w], cycle=0)
 
     # Read top-of-stack
     tos_addr = zero_pc
@@ -121,13 +122,13 @@ def build_ras(
     pop_target = mux(tos_ctr_is_zero, tos_m1_addr, tos_addr)
 
     # Prediction output
-    m.output(f"{prefix}_ras_target", tos_addr.wire)
+    m.output(f"{prefix}_ras_target", wire_of(tos_addr))
     _out["ras_target"] = tos_addr
-    m.output(f"{prefix}_ras_sp", sp.wire)
+    m.output(f"{prefix}_ras_sp", wire_of(sp))
     _out["ras_sp"] = sp
-    m.output(f"{prefix}_ras_top_addr", tos_addr.wire)
+    m.output(f"{prefix}_ras_top_addr", wire_of(tos_addr))
     _out["ras_top_addr"] = tos_addr
-    m.output(f"{prefix}_ras_top_ctr", tos_ctr.wire)
+    m.output(f"{prefix}_ras_top_ctr", wire_of(tos_ctr))
     _out["ras_top_ctr"] = tos_ctr
 
     # ── Commit stack storage ─────────────────────────────────────────
@@ -135,8 +136,8 @@ def build_ras(
     c_ctr = [domain.signal(width=ctr_width, reset_value=0, name=f"{prefix}_cc_{i}") for i in range(commit_size)]
     c_sp = domain.signal(width=commit_ptr_w, reset_value=0, name=f"{prefix}_commit_sp")
 
-    c_sp_m1 = cas(domain, (c_sp.wire - u(commit_ptr_w, 1))[0:commit_ptr_w], cycle=0)
-    c_sp_p1 = cas(domain, (c_sp.wire + u(commit_ptr_w, 1))[0:commit_ptr_w], cycle=0)
+    c_sp_m1 = cas(domain, (wire_of(c_sp) - u(commit_ptr_w, 1))[0:commit_ptr_w], cycle=0)
+    c_sp_p1 = cas(domain, (wire_of(c_sp) + u(commit_ptr_w, 1))[0:commit_ptr_w], cycle=0)
 
     c_tos_addr = zero_pc
     c_tos_ctr = cas(domain, m.const(0, width=ctr_width), cycle=0)
@@ -160,7 +161,7 @@ def build_ras(
         old_c = spec_ctr[j]
         inc_c = mux(old_c == cas(domain, m.const(ctr_max, width=ctr_width), cycle=0),
                      old_c,
-                     cas(domain, (old_c.wire + u(ctr_width, 1))[0:ctr_width], cycle=0))
+                     cas(domain, (wire_of(old_c) + u(ctr_width, 1))[0:ctr_width], cycle=0))
         spec_ctr[j].assign(mux(we_inc, inc_c, old_c), when=we_inc)
 
         # New entry case (push different address)
@@ -173,7 +174,7 @@ def build_ras(
         we_pop_dec = pop_fire & (~tos_ctr_is_zero) & hit_sp
         dec_c = mux(old_c == cas(domain, m.const(0, width=ctr_width), cycle=0),
                      old_c,
-                     cas(domain, (old_c.wire - u(ctr_width, 1))[0:ctr_width], cycle=0))
+                     cas(domain, (wire_of(old_c) - u(ctr_width, 1))[0:ctr_width], cycle=0))
         spec_ctr[j].assign(mux(we_pop_dec, dec_c, spec_ctr[j]), when=we_pop_dec)
 
     # Stack pointer update
@@ -199,7 +200,7 @@ def build_ras(
         we_c_inc = commit_push & c_same_addr & hit_csp
         inc_cc = mux(old_cc == cas(domain, m.const(ctr_max, width=ctr_width), cycle=0),
                       old_cc,
-                      cas(domain, (old_cc.wire + u(ctr_width, 1))[0:ctr_width], cycle=0))
+                      cas(domain, (wire_of(old_cc) + u(ctr_width, 1))[0:ctr_width], cycle=0))
         c_ctr[j].assign(mux(we_c_inc, inc_cc, old_cc), when=we_c_inc)
 
         we_c_new = commit_push & (~c_same_addr) & hit_csp1
@@ -209,7 +210,7 @@ def build_ras(
         we_c_pop = commit_pop & (~c_tos_ctr_zero) & hit_csp
         dec_cc = mux(old_cc == cas(domain, m.const(0, width=ctr_width), cycle=0),
                       old_cc,
-                      cas(domain, (old_cc.wire - u(ctr_width, 1))[0:ctr_width], cycle=0))
+                      cas(domain, (wire_of(old_cc) - u(ctr_width, 1))[0:ctr_width], cycle=0))
         c_ctr[j].assign(mux(we_c_pop, dec_cc, c_ctr[j]), when=we_c_pop)
 
     next_csp = c_sp
@@ -219,11 +220,11 @@ def build_ras(
     return _out
 
 
-build_ras.__pycircuit_name__ = "ras"
+ras.__pycircuit_name__ = "ras"
 
 
 if __name__ == "__main__":
     print(compile_cycle_aware(
-        build_ras, name="ras", eager=True,
+        ras, name="ras", eager=True,
         commit_size=16, spec_size=32,
     ).emit_mlir())

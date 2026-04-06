@@ -38,6 +38,7 @@ from pycircuit import (
     compile_cycle_aware,
     mux,
     u,
+    wire_of,
 )
 
 from top.parameters import XLEN
@@ -56,7 +57,7 @@ ST_DONE = 2
 STATE_WIDTH = 2
 
 
-def build_div(
+def div(
     m: CycleAwareCircuit,
     domain: CycleAwareDomain,
     *,
@@ -117,7 +118,7 @@ def build_div(
     divisor_zero = cur_s2 == _const(0)
 
     # Simplified: unsigned divide/remainder on captured operands
-    quot_u = cas(domain, cur_s1.wire.lshr(amount=m.const(0, width=1))[0:data_width], cycle=0)
+    quot_u = cas(domain, wire_of(cur_s1).lshr(amount=m.const(0, width=1))[0:data_width], cycle=0)
     rem_u = cas(domain, m.const(0, width=data_width), cycle=0)
 
     # When divisor is zero, return all-ones for quotient, dividend for remainder
@@ -135,18 +136,18 @@ def build_div(
     out_valid = is_done & (~flush)
     in_ready = is_idle & (~flush)
 
-    m.output(f"{prefix}_out_valid", out_valid.wire)
+    m.output(f"{prefix}_out_valid", wire_of(out_valid))
     _out["out_valid"] = out_valid
-    m.output(f"{prefix}_in_ready", in_ready.wire)
+    m.output(f"{prefix}_in_ready", wire_of(in_ready))
     _out["in_ready"] = in_ready
-    m.output(f"{prefix}_result", cur_result.wire)
+    m.output(f"{prefix}_result", wire_of(cur_result))
     _out["result"] = cur_result
 
     # ── Cycle 1: State updates ───────────────────────────────────
     domain.next()
 
     LAT_CONST = cas(domain, m.const(latency - 1, width=cnt_w), cycle=0)
-    CNT_DEC = cas(domain, (cur_cnt.wire - m.const(1, width=cnt_w))[0:cnt_w], cycle=0)
+    CNT_DEC = cas(domain, (wire_of(cur_cnt) - m.const(1, width=cnt_w))[0:cnt_w], cycle=0)
 
     # IDLE → BUSY on valid input
     start = is_idle & in_valid & (~flush)
@@ -173,11 +174,11 @@ def build_div(
     return _out
 
 
-build_div.__pycircuit_name__ = "div"
+div.__pycircuit_name__ = "div"
 
 
 if __name__ == "__main__":
     print(compile_cycle_aware(
-        build_div, name="div", eager=True,
+        div, name="div", eager=True,
         data_width=16, latency=4,
     ).emit_mlir())

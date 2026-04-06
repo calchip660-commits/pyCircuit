@@ -5,6 +5,7 @@ from pycircuit import (
     CycleAwareDomain,
     cas,
     compile_cycle_aware,
+    wire_of,
 )
 
 
@@ -17,7 +18,7 @@ def build(m: CycleAwareCircuit, domain: CycleAwareDomain, width: int = 8) -> Non
     d3 = d2 + 1
 
     q = domain.signal(width=width, reset_value=0, name="q")
-    m.output("y", q)
+    m.output("y", wire_of(q))
 
     domain.next()
     q <<= d3

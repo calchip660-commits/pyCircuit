@@ -210,21 +210,18 @@ class CycleAwareDomain:
 
         cache_key = _hierarchical_cache_key(fn, kwargs)
         if cache_key not in self._sub_cache:
+            canonical_kwargs = dict(kwargs)
+            canonical_kwargs["prefix"] = sub_name
+
             sub_m = CycleAwareCircuit(sub_name)
             sub_dom = sub_m.create_domain(self._name)
             sub_dom._hierarchical = True
             sub_dom._design = self._design
             sub_dom._sub_cache = self._sub_cache
 
-            outs_dict = fn(sub_m, sub_dom, inputs=None, **kwargs)
+            outs_dict = fn(sub_m, sub_dom, inputs=None, **canonical_kwargs)
 
             out_entries = _record_output_structure(outs_dict, circuit=sub_m)
-            num_ports = sum(e[2] for e in out_entries)
-            if len(sub_m._results) != num_ports:
-                raise RuntimeError(
-                    f"hierarchical compile of '{sub_name}': output dict has {num_ports} "
-                    f"signals but module emitted {len(sub_m._results)} output ports"
-                )
 
             cm = _make_compiled_module(fn, sub_m, sub_name)
             self._design.add(cm)
@@ -232,10 +229,11 @@ class CycleAwareDomain:
 
         sub_m, out_entries = self._sub_cache[cache_key]
 
+        canonical_prefix = sub_name
         input_map: dict[str, Any] = {}
         if inputs:
             for k, v in inputs.items():
-                input_map[f"{prefix}_{k}"] = v
+                input_map[f"{canonical_prefix}_{k}"] = v
 
         input_sigs: list[Signal] = []
         for port_name, port_sig in sub_m._args:
@@ -254,10 +252,17 @@ class CycleAwareDomain:
                         w = w._trunc(width=expect_w)
                 input_sigs.append(w.sig)
             else:
-                raise TypeError(
-                    f"hierarchical call to '{sub_name}': no mapping for input port "
-                    f"'{port_name}' (available: {sorted(input_map)})"
-                )
+                if port_sig.ty.startswith("i"):
+                    width = int(port_sig.ty[1:])
+                else:
+                    width = 1
+                if port_name.startswith(canonical_prefix + "_"):
+                    suffix = port_name[len(canonical_prefix) + 1:]
+                    parent_port_name = f"{prefix}_{suffix}"
+                else:
+                    parent_port_name = f"{prefix}_{port_name}"
+                parent_wire = self._m.input(parent_port_name, width=width)
+                input_sigs.append(parent_wire.sig)
 
         result_types = [sig.ty for _, sig in sub_m._results]
         out_sigs = self._m.instance_op(
@@ -288,10 +293,13 @@ class CycleAwareDomain:
 # ── Hierarchical compilation helpers ──────────────────────────────────────
 
 def _hierarchical_cache_key(fn: Callable[..., Any], kwargs: dict[str, Any]) -> tuple[Any, ...]:
-    """Build a cache key from function identity + compile-time kwargs."""
+    """Build a cache key from function identity + compile-time kwargs.
+
+    ``prefix`` is excluded because it only affects port naming, not the
+    module's structural identity."""
     import json as _json
     kw_str = _json.dumps(
-        {k: repr(v) for k, v in sorted(kwargs.items())},
+        {k: repr(v) for k, v in sorted(kwargs.items()) if k != "prefix"},
         sort_keys=True, separators=(",", ":"),
     )
     return (id(fn), kw_str)

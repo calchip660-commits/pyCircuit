@@ -32,11 +32,12 @@ from pycircuit import (
     compile_cycle_aware,
     mux,
     u,
+    wire_of,
 )
 from top.parameters import *
 
 
-def build_sbuffer(
+def sbuffer(
     m: CycleAwareCircuit,
     domain: CycleAwareDomain,
     *,
@@ -140,18 +141,18 @@ def build_sbuffer(
 
     do_drain = drain_valid & dcache_ready & (above_thresh | full | flush)
     drain_addr = cas(domain,
-                     m.cat(drain_tag.wire, m.const(0, width=line_bits)),
+                     m.cat(wire_of(drain_tag), m.const(0, width=line_bits)),
                      cycle=0)
 
-    m.output(f"{prefix}_dcache_wr_valid", do_drain.wire)
+    m.output(f"{prefix}_dcache_wr_valid", wire_of(do_drain))
     _out["dcache_wr_valid"] = do_drain
-    m.output(f"{prefix}_dcache_wr_addr", drain_addr.wire)
+    m.output(f"{prefix}_dcache_wr_addr", wire_of(drain_addr))
     _out["dcache_wr_addr"] = drain_addr
-    m.output(f"{prefix}_dcache_wr_data", drain_data.wire)
+    m.output(f"{prefix}_dcache_wr_data", wire_of(drain_data))
     _out["dcache_wr_data"] = drain_data
-    m.output(f"{prefix}_dcache_wr_mask", drain_mask.wire)
+    m.output(f"{prefix}_dcache_wr_mask", wire_of(drain_mask))
     _out["dcache_wr_mask"] = drain_mask
-    m.output(f"{prefix}_ready", can_alloc.wire)
+    m.output(f"{prefix}_ready", wire_of(can_alloc))
     _out["ready"] = can_alloc
 
     # ── domain.next() → Cycle 1: state updates ──────────────────────
@@ -167,8 +168,8 @@ def build_sbuffer(
 
         # Merge path
         is_merge = do_enq & merge_hit & (merge_idx == j_const)
-        merged_data = cas(domain, (old_d.wire & ~enq_data.wire) | enq_data.wire, cycle=0)
-        merged_mask = cas(domain, (old_m.wire | enq_mask.wire)[0:mask_w], cycle=0)
+        merged_data = cas(domain, (wire_of(old_d) & ~wire_of(enq_data)) | wire_of(enq_data), cycle=0)
+        merged_mask = cas(domain, (wire_of(old_m) | wire_of(enq_mask))[0:mask_w], cycle=0)
         e_data[j].assign(mux(is_merge, merged_data, old_d), when=is_merge)
         e_mask[j].assign(mux(is_merge, merged_mask, old_m), when=is_merge)
 
@@ -190,20 +191,20 @@ def build_sbuffer(
     # Occupancy update
     enq_inc = do_enq & (~merge_hit) & alloc_found
     net = mux(enq_inc & (~do_drain),
-              cas(domain, (occ.wire + u(cnt_w, 1))[0:cnt_w], cycle=0),
+              cas(domain, (wire_of(occ) + u(cnt_w, 1))[0:cnt_w], cycle=0),
               mux(do_drain & (~enq_inc),
-                  cas(domain, (occ.wire - u(cnt_w, 1))[0:cnt_w], cycle=0),
+                  cas(domain, (wire_of(occ) - u(cnt_w, 1))[0:cnt_w], cycle=0),
                   occ))
     net = mux(flush, cas(domain, m.const(0, width=cnt_w), cycle=0), net)
     occ <<= net
     return _out
 
 
-build_sbuffer.__pycircuit_name__ = "sbuffer"
+sbuffer.__pycircuit_name__ = "sbuffer"
 
 
 if __name__ == "__main__":
     print(compile_cycle_aware(
-        build_sbuffer, name="sbuffer", eager=True,
+        sbuffer, name="sbuffer", eager=True,
         size=4, threshold=2, addr_width=36,
     ).emit_mlir())

@@ -35,6 +35,7 @@ from pycircuit import (
     compile_cycle_aware,
     mux,
     u,
+    wire_of,
 )
 
 from top.parameters import XLEN
@@ -55,7 +56,7 @@ ST_DONE = 2
 STATE_WIDTH = 2
 
 
-def build_fpu(
+def fpu(
     m: CycleAwareCircuit,
     domain: CycleAwareDomain,
     *,
@@ -101,12 +102,12 @@ def build_fpu(
     is_pipe = ~is_fdiv
 
     # ── Pipelined path (FADD/FSUB/FMUL): combinational result ───
-    add_result = cas(domain, (src1.wire + src2.wire)[0:data_width], cycle=0)
-    sub_result = cas(domain, (src1.wire - src2.wire)[0:data_width], cycle=0)
+    add_result = cas(domain, (wire_of(src1) + wire_of(src2))[0:data_width], cycle=0)
+    sub_result = cas(domain, (wire_of(src1) - wire_of(src2))[0:data_width], cycle=0)
 
-    src1_wide = cas(domain, (src1.wire + u(double_w, 0))[0:double_w], cycle=0)
-    src2_wide = cas(domain, (src2.wire + u(double_w, 0))[0:double_w], cycle=0)
-    mul_full = cas(domain, (src1_wide.wire * src2_wide.wire)[0:double_w], cycle=0)
+    src1_wide = cas(domain, (wire_of(src1) + u(double_w, 0))[0:double_w], cycle=0)
+    src2_wide = cas(domain, (wire_of(src2) + u(double_w, 0))[0:double_w], cycle=0)
+    mul_full = cas(domain, (wire_of(src1_wide) * wire_of(src2_wide))[0:double_w], cycle=0)
     mul_result = mul_full[0:data_width]
 
     pipe_result = add_result
@@ -119,8 +120,8 @@ def build_fpu(
     pipe_v = pipe_fire
     pipe_r = pipe_result
     for stage in range(pipe_latency):
-        pipe_v_w = domain.cycle(pipe_v.wire, name=f"{prefix}_fpipe_v_{stage}")
-        pipe_r_w = domain.cycle(pipe_r.wire, name=f"{prefix}_fpipe_r_{stage}")
+        pipe_v_w = domain.cycle(wire_of(pipe_v), name=f"{prefix}_fpipe_v_{stage}")
+        pipe_r_w = domain.cycle(wire_of(pipe_r), name=f"{prefix}_fpipe_r_{stage}")
         pipe_v = cas(domain, pipe_v_w, cycle=0)
         pipe_r = cas(domain, pipe_r_w, cycle=0)
 
@@ -140,7 +141,7 @@ def build_fpu(
     # Simplified division: dividend shifted right (placeholder for real FP div)
     divisor_zero = cur_ds2 == _const(0)
     all_ones = _const((1 << data_width) - 1)
-    div_quot = cas(domain, cur_ds1.wire.lshr(amount=m.const(0, width=1))[0:data_width], cycle=0)
+    div_quot = cas(domain, wire_of(cur_ds1).lshr(amount=m.const(0, width=1))[0:data_width], cycle=0)
     div_safe = mux(divisor_zero, all_ones, div_quot)
 
     # ── Outputs ──────────────────────────────────────────────────
@@ -152,18 +153,18 @@ def build_fpu(
     result = mux(div_out_valid, cur_dres, pipe_r)
     in_ready = (is_pipe | (is_fdiv & is_idle)) & (~flush)
 
-    m.output(f"{prefix}_out_valid", out_valid.wire)
+    m.output(f"{prefix}_out_valid", wire_of(out_valid))
     _out["out_valid"] = out_valid
-    m.output(f"{prefix}_in_ready", in_ready.wire)
+    m.output(f"{prefix}_in_ready", wire_of(in_ready))
     _out["in_ready"] = in_ready
-    m.output(f"{prefix}_result", result.wire)
+    m.output(f"{prefix}_result", wire_of(result))
     _out["result"] = result
 
     # ── Cycle 1: State updates ───────────────────────────────────
     domain.next()
 
     LAT_CONST = cas(domain, m.const(fdiv_latency - 1, width=cnt_w), cycle=0)
-    CNT_DEC = cas(domain, (cur_cnt.wire - m.const(1, width=cnt_w))[0:cnt_w], cycle=0)
+    CNT_DEC = cas(domain, (wire_of(cur_cnt) - m.const(1, width=cnt_w))[0:cnt_w], cycle=0)
 
     # FDIV: IDLE → BUSY on valid fdiv input
     div_start = is_idle & in_valid & is_fdiv & (~flush)
@@ -189,11 +190,11 @@ def build_fpu(
     return _out
 
 
-build_fpu.__pycircuit_name__ = "fpu"
+fpu.__pycircuit_name__ = "fpu"
 
 
 if __name__ == "__main__":
     print(compile_cycle_aware(
-        build_fpu, name="fpu", eager=True,
+        fpu, name="fpu", eager=True,
         data_width=16, pipe_latency=2, fdiv_latency=4,
     ).emit_mlir())

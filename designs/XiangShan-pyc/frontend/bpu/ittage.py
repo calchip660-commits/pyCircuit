@@ -33,6 +33,7 @@ from pycircuit import (
     compile_cycle_aware,
     mux,
     u,
+    wire_of,
 )
 
 from top.parameters import PC_WIDTH, ITTAGE_TAG_WIDTH
@@ -47,7 +48,7 @@ SMALL_ITTAGE_TABLE_INFOS = [
 ITTAGE_USEFUL_WIDTH = 1
 
 
-def build_ittage(
+def ittage(
     m: CycleAwareCircuit,
     domain: CycleAwareDomain,
     *,
@@ -120,11 +121,11 @@ def build_ittage(
         idx_w = max(1, math.ceil(math.log2(tbl_size)))
         folded = global_hist[0:idx_w]
         pc_bits = s0_pc[1:1 + idx_w]
-        tbl_index = cas(domain, (pc_bits.wire ^ folded.wire)[0:idx_w], cycle=0)
+        tbl_index = cas(domain, (wire_of(pc_bits) ^ wire_of(folded))[0:idx_w], cycle=0)
 
         tag_hist = global_hist[0:tag_width]
         pc_tag_bits = s0_pc[1:1 + tag_width]
-        tbl_tag_comp = cas(domain, (pc_tag_bits.wire ^ tag_hist.wire)[0:tag_width], cycle=0)
+        tbl_tag_comp = cas(domain, (wire_of(pc_tag_bits) ^ wire_of(tag_hist))[0:tag_width], cycle=0)
 
         ev = tbl_entry_valid[t_idx]
         etag = tbl_entry_tag[t_idx]
@@ -157,13 +158,13 @@ def build_ittage(
         provider_id = mux(is_hit, cas(domain, m.const(t_idx + 1, width=prov_id_w), cycle=0), provider_id)
 
     pred_valid = s0_fire & provider_valid
-    m.output(f"{prefix}_pred_valid", pred_valid.wire)
+    m.output(f"{prefix}_pred_valid", wire_of(pred_valid))
     _out["pred_valid"] = pred_valid
-    m.output(f"{prefix}_pred_target", provider_target.wire)
+    m.output(f"{prefix}_pred_target", wire_of(provider_target))
     _out["pred_target"] = provider_target
-    m.output(f"{prefix}_provider_valid", provider_valid.wire)
+    m.output(f"{prefix}_provider_valid", wire_of(provider_valid))
     _out["provider_valid"] = provider_valid
-    m.output(f"{prefix}_provider_id", provider_id.wire)
+    m.output(f"{prefix}_provider_id", wire_of(provider_id))
     _out["provider_id"] = provider_id
 
     # ── Tick counter for periodic useful reset ───────────────────────
@@ -177,11 +178,11 @@ def build_ittage(
         idx_w = max(1, math.ceil(math.log2(tbl_size)))
         t_folded = train_hist[0:idx_w]
         t_pc_bits = train_pc[1:1 + idx_w]
-        t_index = cas(domain, (t_pc_bits.wire ^ t_folded.wire)[0:idx_w], cycle=0)
+        t_index = cas(domain, (wire_of(t_pc_bits) ^ wire_of(t_folded))[0:idx_w], cycle=0)
 
         t_tag_hist = train_hist[0:tag_width]
         t_pc_tag = train_pc[1:1 + tag_width]
-        t_tag = cas(domain, (t_pc_tag.wire ^ t_tag_hist.wire)[0:tag_width], cycle=0)
+        t_tag = cas(domain, (wire_of(t_pc_tag) ^ wire_of(t_tag_hist))[0:tag_width], cycle=0)
 
         is_provider = train_provider_valid & (train_provider_id == cas(domain, m.const(t_idx + 1, width=prov_id_w), cycle=0))
 
@@ -206,10 +207,10 @@ def build_ittage(
             target_correct = e_tar == train_target
             u_inc = mux(e_u == cas(domain, m.const(useful_max, width=useful_width), cycle=0),
                         e_u,
-                        cas(domain, (e_u.wire + u(useful_width, 1))[0:useful_width], cycle=0))
+                        cas(domain, (wire_of(e_u) + u(useful_width, 1))[0:useful_width], cycle=0))
             u_dec = mux(e_u == cas(domain, m.const(0, width=useful_width), cycle=0),
                         e_u,
-                        cas(domain, (e_u.wire - u(useful_width, 1))[0:useful_width], cycle=0))
+                        cas(domain, (wire_of(e_u) - u(useful_width, 1))[0:useful_width], cycle=0))
             new_u = mux(target_correct, u_inc, u_dec)
             we_useful = train_valid & is_provider & idx_hit & e_v & tag_match
             euse[j].assign(mux(we_useful, new_u, e_u), when=we_useful)
@@ -229,16 +230,16 @@ def build_ittage(
     # Tick counter update
     next_tick = mux(tick_overflow,
                     cas(domain, m.const(0, width=8), cycle=0),
-                    cas(domain, (tick_val.wire + u(8, 1))[0:8], cycle=0))
+                    cas(domain, (wire_of(tick_val) + u(8, 1))[0:8], cycle=0))
     tick_val <<= mux(train_valid & train_mispred, next_tick, tick_val)
     return _out
 
 
-build_ittage.__pycircuit_name__ = "ittage"
+ittage.__pycircuit_name__ = "ittage"
 
 
 if __name__ == "__main__":
     print(compile_cycle_aware(
-        build_ittage, name="ittage", eager=True,
+        ittage, name="ittage", eager=True,
         table_infos=SMALL_ITTAGE_TABLE_INFOS,
     ).emit_mlir())

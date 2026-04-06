@@ -11,6 +11,7 @@ from pycircuit import (
     CycleAwareDomain,
     cas,
     compile_cycle_aware,
+    wire_of,
 )
 
 
@@ -30,7 +31,7 @@ def build(m: CycleAwareCircuit, domain: CycleAwareDomain, *,
 
     delay_states = [domain.signal(width=DATA_W, reset_value=0, name=f"delay_{i}") for i in range(1, TAPS)]
 
-    taps_wire = [x_in.wire] + [st for st in delay_states]
+    taps_wire = [wire_of(x_in)] + [wire_of(st) for st in delay_states]
 
     coeff_wires = [m.const(cv, width=ACC_W) for cv in COEFFS]
 
@@ -45,8 +46,8 @@ def build(m: CycleAwareCircuit, domain: CycleAwareDomain, *,
     y_out_state = domain.signal(width=ACC_W, reset_value=0, name="y_out_reg")
     y_valid_state = domain.signal(width=1, reset_value=0, name="y_valid_reg")
 
-    m.output("y_out", y_out_state)
-    m.output("y_valid", y_valid_state)
+    m.output("y_out", wire_of(y_out_state))
+    m.output("y_valid", wire_of(y_valid_state))
 
     domain.next()
 

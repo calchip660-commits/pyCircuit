@@ -71,9 +71,7 @@ def davinci_top(
     # ═══════════════════════════════════════════════════════════════════
     stall_in = _in(inputs, "stall", m, domain, prefix=prefix, width=1)
     icache_valid = _in(inputs, "icache_valid", m, domain, prefix=prefix, width=1)
-    _in(
-        inputs, "dmem_rdata", m, domain, prefix=prefix, width=SCALAR_DATA_W
-    )
+    _in(inputs, "dmem_rdata", m, domain, prefix=prefix, width=SCALAR_DATA_W)
     _in(inputs, "dmem_rvalid", m, domain, prefix=prefix, width=1)
     bru_redirect = _in(inputs, "bru_redirect", m, domain, prefix=prefix, width=1)
     bru_target = _in(inputs, "bru_target", m, domain, prefix=prefix, width=ADDR_W)

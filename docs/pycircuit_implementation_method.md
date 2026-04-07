@@ -99,12 +99,12 @@ Mirror the **directory layout** (design file + `tb_*.py` + optional `README.md`)
    - **Sub-Module Calling Convention** (6-step workflow): `domain.call()`, `submodule_input()`, `wire_of()`, key-matching rules, prefix cascade.
    - **Hierarchical MLIR Emission**: `compile_cycle_aware(..., hierarchical=True)`.
    - **Simulation**: `CycleAwareTb` for cycle-aware testbenches.
-3. Read **`docs/FRONTEND_API.md`** and **`docs/TESTBENCH.md`** for `@module`, `Circuit`, and simulation contracts.
-4. Open **2–3 concrete examples** under `designs/` that match your intended style:
+2. Read **`docs/FRONTEND_API.md`** and **`docs/TESTBENCH.md`** for `@module`, `Circuit`, and simulation contracts.
+3. Open **2–3 concrete examples** under `designs/` that match your intended style:
    - **V5 hierarchical**: `designs/outerCube/davinci/` (full-scale: `davinci_top.py` → `fetch.py` → `alu.py`, with unit/integration tests).
    - **V5 single-module**: `designs/BypassUnit/`, `designs/RegisterFile/`.
    - **`@module`**: `designs/examples/counter/`, `designs/examples/hier_modules/`.
-5. Note **non-negotiables** from `AGENTS.md`: gate-first IR changes; no backend-only semantic fixes.
+4. Note **non-negotiables** from `AGENTS.md`: gate-first IR changes; no backend-only semantic fixes.
 
 **Deliverable:** Short notes (in design `README.md` or `ASSUMPTIONS.md`): which authoring mode (V5 vs `@module` vs mixed), and which example design is the **style reference**.
 
@@ -373,4 +373,4 @@ For complex blocks, mirror this repository's **10-step** narrative in **block-lo
 
 ---
 
-**Copyright (C) 2024–2026 PyCircuit Contributors**
+Copyright (C) 2024–2026 PyCircuit Contributors

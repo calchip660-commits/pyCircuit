@@ -116,9 +116,7 @@ def backend(
         rob_idx_w=rob_idx_w,
     )
 
-    domain.call(
-        regfile, inputs={}, prefix=f"{prefix}_s_rf", data_width=data_width
-    )
+    domain.call(regfile, inputs={}, prefix=f"{prefix}_s_rf", data_width=data_width)
 
     for _i in range(num_int_exu):
         domain.call(alu, inputs={}, prefix=f"{prefix}_s_alu{_i}", data_width=data_width)
@@ -131,13 +129,9 @@ def backend(
         pc_width=pc_width,
     )
 
-    domain.call(
-        mul, inputs={}, prefix=f"{prefix}_s_mul", data_width=data_width
-    )
+    domain.call(mul, inputs={}, prefix=f"{prefix}_s_mul", data_width=data_width)
 
-    domain.call(
-        div, inputs={}, prefix=f"{prefix}_s_div", data_width=data_width
-    )
+    domain.call(div, inputs={}, prefix=f"{prefix}_s_div", data_width=data_width)
 
     for _i in range(num_fp_exu):
         domain.call(fpu, inputs={}, prefix=f"{prefix}_s_fpu{_i}", data_width=data_width)

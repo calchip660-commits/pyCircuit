@@ -403,9 +403,7 @@ def bpu(
     target_differs = cas(
         domain, (wire_of(s3_target) ^ wire_of(s3_s1_target))[0:1], cycle=0
     )
-    cas(domain, wire_of(s3_target) | wire_of(s3_s1_target), cycle=0)[
-        0:1
-    ]
+    cas(domain, wire_of(s3_target) | wire_of(s3_s1_target), cycle=0)[0:1]
     taken_differs = cas(
         domain, (wire_of(s3_taken) ^ wire_of(s3_s1_taken))[0:1], cycle=0
     )

@@ -57,7 +57,6 @@ def tlb(
 
     way_bits = max(1, (n_ways - 1).bit_length())
 
-
     # ================================================================
     # Cycle 0 — CAM Lookup: compare VPN+ASID against all entries
     # ================================================================

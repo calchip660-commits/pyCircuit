@@ -151,9 +151,7 @@ def ibuffer(
     # ptr_w has the wrap bit, we can compute:
     num_valid = cas(domain, (wire_of(enq_ptr) - wire_of(deq_ptr))[0:cnt_w], cycle=0)
 
-    cas(
-        domain, (m.const(size, width=cnt_w) - wire_of(num_valid))[0:cnt_w], cycle=0
-    )
+    cas(domain, (m.const(size, width=cnt_w) - wire_of(num_valid))[0:cnt_w], cycle=0)
 
     # Backpressure: ready if we have enough space for incoming instructions
     in_ready_comb = cas(

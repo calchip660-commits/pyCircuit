@@ -84,9 +84,7 @@ def frontend(
 
     domain.call(ifu, inputs={}, prefix=f"{prefix}_s_ifu", pc_width=pc_width)
 
-    domain.call(
-        ibuffer, inputs={}, prefix=f"{prefix}_s_ibuf", deq_width=decode_width
-    )
+    domain.call(ibuffer, inputs={}, prefix=f"{prefix}_s_ibuf", deq_width=decode_width)
 
     domain.call(
         decode,

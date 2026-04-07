@@ -2,7 +2,7 @@
 
 **版本：5.0**（统一合并自 API 参考 v4.0 与编程教程 v3.0）
 
-**作者：Liao Heng**
+作者：Liao Heng
 
 > **包名**：Python 包为 **`pycircuit`**（全小写）。不要使用 `pyCircuit` 作为 import 目标。
 > **并存风格**：pyc4.0 的 `@module` / `Circuit` 流程仍是官方主路径之一，见 `docs/tutorial/unified-signal-model.md` 与 `docs/FRONTEND_API.md`。
@@ -388,6 +388,7 @@ print(domain.cycle_index)              # 2  ← 再次恢复
 ## 自动周期平衡
 
 当组合不同周期的信号时：
+
 - **输出周期 = max(输入周期)**
 - 周期较早的信号自动插入 DFF 延迟链
 
@@ -480,6 +481,7 @@ if __name__ == "__main__":
 ```
 
 **核心优势：**
+
 - `(m, domain)` 是贯穿上下文，所有信号操作直接在同一张信号图上
 - `domain.next()` 推进时间线，代码按时序线性叙事
 - `domain.call()` 实现子模块层次化调用
@@ -835,7 +837,7 @@ return outs
 
 ### Cycle 属性传递
 
-```
+```text
 父函数 cycle 0          子函数（push 后）                 父函数 pop 后
 ──────────────          ────────────────                 ──────────────
 stall (cycle=0) ──→     submodule_input: stall (cycle=0)
@@ -849,6 +851,7 @@ stall (cycle=0) ──→     submodule_input: stall (cycle=0)
 ```
 
 **关键点**：
+
 - 传入的信号保留原始 cycle
 - 返回的信号携带子函数内部产生时的 cycle
 - `domain.call()` 隔离子函数的 `domain.next()` 对父函数周期计数的影响，但**不改变信号本身的 cycle 值**
@@ -998,7 +1001,7 @@ python -m designs.outerCube.davinci.davinci_top --hierarchical
 
 ### MLIR 输出结构
 
-```
+```text
 module attributes {pyc.top = @davinci_top, ...} {
   func.func @fetch(%clk, %rst, ...) -> (...) { ... }
   func.func @decoder(%clk, %rst, ...) -> (...) { ... }
@@ -1095,7 +1098,7 @@ def tb(t: Tb) -> None:
 
 ### 仿真流程
 
-```
+```text
 PyCircuit V5 设计代码                    仿真流程
 ─────────────────                    ─────────
 compile_cycle_aware() → MLIR ──→ pycc backend ──→ C++ / SystemVerilog
@@ -1299,7 +1302,7 @@ endmodule
 
 有两种方式实现扁平化：
 
-**方式 B-1：从扁平 MLIR 生成（前端不保留层次）**
+#### 方式 B-1：从扁平 MLIR 生成（前端不保留层次）
 
 ```bash
 cd $PROJECT_ROOT
@@ -1318,7 +1321,7 @@ build/bin/pycc davinci_top.mlir \
 #   单一 module davinci_top（~39,000 行）
 ```
 
-**方式 B-2：从层次化 MLIR + `--flatten` 生成（pycc 后端内联）**
+#### 方式 B-2：从层次化 MLIR + `--flatten` 生成（pycc 后端内联）
 
 ```bash
 cd $PROJECT_ROOT
@@ -1547,6 +1550,7 @@ if __name__ == "__main__":
 ```
 
 **设计要点：**
+
 1. **层次清晰**：`soc_top` → `cpu_core` → `frontend` / `backend`，函数调用链即设计层次
 2. **周期管理**：`domain.call()` 自动隔离子系统周期
 3. **命名隔离**：前缀 `soc_cpu_fe_*` / `soc_cpu_be_*` 避免端口冲突
@@ -1686,7 +1690,7 @@ result = (a + b).named("sum_ab")
 
 ### 9. 大型项目组织
 
-```
+```text
 designs/my_soc/
 ├── common/
 │   └── parameters.py         # 全局参数
@@ -1703,6 +1707,7 @@ designs/my_soc/
 ```
 
 **原则：**
+
 - 每个模块函数独占一个文件，文件名 = 模块名
 - 全局参数集中在 `parameters.py`
 - 每个模块可独立 `compile_cycle_aware()` 编译测试

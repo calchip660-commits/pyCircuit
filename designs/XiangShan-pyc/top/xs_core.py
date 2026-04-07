@@ -448,9 +448,7 @@ def xs_core(
     _out["stall_to_frontend"] = cas(domain, pipeline_stall, cycle=domain.cycle_index)
 
     # Writeback forwarding
-    (
-        max(1, num_wb.bit_length()) if isinstance(num_wb, int) and num_wb > 0 else 3
-    )
+    (max(1, num_wb.bit_length()) if isinstance(num_wb, int) and num_wb > 0 else 3)
     for i in range(num_wb):
         m.output(f"{prefix}_rob_wb_valid_{i}", wire_of(wb_valid[i]))
         m.output(f"{prefix}_rob_wb_rob_idx_{i}", wire_of(wb_rob_idx[i]))

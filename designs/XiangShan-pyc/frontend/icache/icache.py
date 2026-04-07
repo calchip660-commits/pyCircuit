@@ -21,6 +21,7 @@ Simplified vs full XiangShan:
   - No TileLink coherence (Probe/Release)
   - Pipeline flush kills in-flight requests; no content invalidation here
 """
+
 from __future__ import annotations
 
 import math
@@ -36,14 +37,17 @@ from pycircuit import (
     CycleAwareDomain,
     CycleAwareSignal,
     cas,
-    compile_cycle_aware,
-    mux,
-    u,
+    wire_of,
 )
-from top.parameters import ICACHE_SETS, ICACHE_WAYS, ICACHE_BLOCK_BYTES, PC_WIDTH, CACHE_LINE_SIZE
+from top.parameters import (
+    ICACHE_BLOCK_BYTES,
+    ICACHE_SETS,
+    ICACHE_WAYS,
+    PC_WIDTH,
+)
 
 
-def build_icache(
+def icache(
     m: CycleAwareCircuit,
     domain: CycleAwareDomain,
     *,
@@ -57,7 +61,6 @@ def build_icache(
     """ICache: VIPT set-associative instruction cache with 4-stage pipeline."""
     _in = inputs or {}
     _out: dict[str, CycleAwareSignal] = {}
-
 
     block_bits = block_bytes * 8
     offset_bits = int(math.log2(block_bytes))
@@ -73,41 +76,66 @@ def build_icache(
     # s0 — Request: accept fetch, decompose address, read SRAMs
     # ================================================================
 
-    flush = (_in["flush"] if "flush" in _in else
+    flush = (
+        _in["flush"]
+        if "flush" in _in
+        else cas(domain, m.input(f"{prefix}_flush", width=1), cycle=0)
+    )
+    fetch_valid = (
+        _in["fetch_valid"]
+        if "fetch_valid" in _in
+        else cas(domain, m.input(f"{prefix}_fetch_valid", width=1), cycle=0)
+    )
+    fetch_vaddr = (
+        _in["fetch_vaddr"]
+        if "fetch_vaddr" in _in
+        else cas(domain, m.input(f"{prefix}_fetch_vaddr", width=pc_width), cycle=0)
+    )
+    fetch_ptag = (
+        _in["fetch_ptag"]
+        if "fetch_ptag" in _in
+        else cas(domain, m.input(f"{prefix}_fetch_ptag", width=tag_bits), cycle=0)
+    )
 
-        cas(domain, m.input(f"{prefix}_flush", width=1), cycle=0))
-    fetch_valid = (_in["fetch_valid"] if "fetch_valid" in _in else
-        cas(domain, m.input(f"{prefix}_fetch_valid", width=1), cycle=0))
-    fetch_vaddr = (_in["fetch_vaddr"] if "fetch_vaddr" in _in else
-        cas(domain, m.input(f"{prefix}_fetch_vaddr", width=pc_width), cycle=0))
-    fetch_ptag = (_in["fetch_ptag"] if "fetch_ptag" in _in else
-        cas(domain, m.input(f"{prefix}_fetch_ptag", width=tag_bits), cycle=0))
+    refill_valid = (
+        _in["refill_valid"]
+        if "refill_valid" in _in
+        else cas(domain, m.input(f"{prefix}_refill_valid", width=1), cycle=0)
+    )
+    refill_set = (
+        _in["refill_set"]
+        if "refill_set" in _in
+        else cas(domain, m.input(f"{prefix}_refill_set", width=index_bits), cycle=0)
+    )
+    refill_tag = (
+        _in["refill_tag"]
+        if "refill_tag" in _in
+        else cas(domain, m.input(f"{prefix}_refill_tag", width=tag_bits), cycle=0)
+    )
+    refill_way = (
+        _in["refill_way"]
+        if "refill_way" in _in
+        else cas(domain, m.input(f"{prefix}_refill_way", width=way_bits), cycle=0)
+    )
+    refill_data = (
+        _in["refill_data"]
+        if "refill_data" in _in
+        else cas(domain, m.input(f"{prefix}_refill_data", width=block_bits), cycle=0)
+    )
 
-    refill_valid = (_in["refill_valid"] if "refill_valid" in _in else
-
-        cas(domain, m.input(f"{prefix}_refill_valid", width=1), cycle=0))
-    refill_set = (_in["refill_set"] if "refill_set" in _in else
-        cas(domain, m.input(f"{prefix}_refill_set", width=index_bits), cycle=0))
-    refill_tag = (_in["refill_tag"] if "refill_tag" in _in else
-        cas(domain, m.input(f"{prefix}_refill_tag", width=tag_bits), cycle=0))
-    refill_way = (_in["refill_way"] if "refill_way" in _in else
-        cas(domain, m.input(f"{prefix}_refill_way", width=way_bits), cycle=0))
-    refill_data = (_in["refill_data"] if "refill_data" in _in else
-        cas(domain, m.input(f"{prefix}_refill_data", width=block_bits), cycle=0))
-
-    s0_set_idx = fetch_vaddr[offset_bits:offset_bits + index_bits]
+    s0_set_idx = fetch_vaddr[offset_bits : offset_bits + index_bits]
     s0_fire = fetch_valid & (~flush)
 
     # ── Feedback state (registers read at cycle 0, updated at end) ──
 
     valid_regs = [
-        domain.state(width=n_sets, reset_value=0, name=f"{prefix}_vld{w}")
+        domain.signal(width=n_sets, reset_value=0, name=f"{prefix}_vld{w}")
         for w in range(n_ways)
     ]
 
-    mshr_valid = domain.state(width=1, reset_value=0, name=f"{prefix}_mshr_v")
-    mshr_set = domain.state(width=index_bits, reset_value=0, name=f"{prefix}_mshr_set")
-    mshr_tag = domain.state(width=tag_bits, reset_value=0, name=f"{prefix}_mshr_tag")
+    mshr_valid = domain.signal(width=1, reset_value=0, name=f"{prefix}_mshr_v")
+    mshr_set = domain.signal(width=index_bits, reset_value=0, name=f"{prefix}_mshr_set")
+    mshr_tag = domain.signal(width=tag_bits, reset_value=0, name=f"{prefix}_mshr_tag")
 
     # ── Per-way Tag & Data SRAMs (synchronous read) ─────────────────
     # Address presented at s0; read data available one cycle later (s1).
@@ -116,32 +144,44 @@ def build_icache(
     data_rd = []
     for w in range(n_ways):
         w_const = cas(domain, m.const(w, width=way_bits), cycle=0)
-        wr_en_w = (refill_valid & (refill_way == w_const)).wire
+        wr_en_w = wire_of(refill_valid & (refill_way == w_const))
 
-        tag_rd.append(m.sync_mem(
-            cd.clk, cd.rst,
-            ren=s0_fire.wire, raddr=s0_set_idx.wire,
-            wvalid=wr_en_w, waddr=refill_set.wire,
-            wdata=refill_tag.wire,
-            wstrb=m.const((1 << tag_strobe_w) - 1, width=tag_strobe_w),
-            depth=n_sets, name=f"{prefix}_tag_w{w}",
-        ))
+        tag_rd.append(
+            m.sync_mem(
+                cd.clk,
+                cd.rst,
+                ren=wire_of(s0_fire),
+                raddr=wire_of(s0_set_idx),
+                wvalid=wr_en_w,
+                waddr=wire_of(refill_set),
+                wdata=wire_of(refill_tag),
+                wstrb=m.const((1 << tag_strobe_w) - 1, width=tag_strobe_w),
+                depth=n_sets,
+                name=f"{prefix}_tag_w{w}",
+            )
+        )
 
-        data_rd.append(m.sync_mem(
-            cd.clk, cd.rst,
-            ren=s0_fire.wire, raddr=s0_set_idx.wire,
-            wvalid=wr_en_w, waddr=refill_set.wire,
-            wdata=refill_data.wire,
-            wstrb=m.const((1 << data_strobe_w) - 1, width=data_strobe_w),
-            depth=n_sets, name=f"{prefix}_data_w{w}",
-        ))
+        data_rd.append(
+            m.sync_mem(
+                cd.clk,
+                cd.rst,
+                ren=wire_of(s0_fire),
+                raddr=wire_of(s0_set_idx),
+                wvalid=wr_en_w,
+                waddr=wire_of(refill_set),
+                wdata=wire_of(refill_data),
+                wstrb=m.const((1 << data_strobe_w) - 1, width=data_strobe_w),
+                depth=n_sets,
+                name=f"{prefix}_data_w{w}",
+            )
+        )
 
     # ── Pipeline registers s0 → s1 ─────────────────────────────────
 
-    s1_valid_w = domain.cycle(s0_fire.wire, name=f"{prefix}_s1_v")
-    s1_set_idx_w = domain.cycle(s0_set_idx.wire, name=f"{prefix}_s1_set")
-    s1_ptag_w = domain.cycle(fetch_ptag.wire, name=f"{prefix}_s1_ptag")
-    s1_vaddr_w = domain.cycle(fetch_vaddr.wire, name=f"{prefix}_s1_va")
+    s1_valid_w = domain.cycle(wire_of(s0_fire), name=f"{prefix}_s1_v")
+    s1_set_idx_w = domain.cycle(wire_of(s0_set_idx), name=f"{prefix}_s1_set")
+    s1_ptag_w = domain.cycle(wire_of(fetch_ptag), name=f"{prefix}_s1_ptag")
+    domain.cycle(wire_of(fetch_vaddr), name=f"{prefix}_s1_va")
 
     domain.next()  # ─────────────── s0 → s1 boundary ───────────────
 
@@ -151,8 +191,8 @@ def build_icache(
 
     s1_way_hit = []
     for w in range(n_ways):
-        vld_bit = valid_regs[w].wire.lshr(amount=s1_set_idx_w)[0:1]
-        tag_eq = (tag_rd[w][0:tag_bits] == s1_ptag_w)
+        vld_bit = wire_of(valid_regs[w]).lshr(amount=s1_set_idx_w)[0:1]
+        tag_eq = tag_rd[w][0:tag_bits] == s1_ptag_w
         s1_way_hit.append(vld_bit & tag_eq)
 
     s1_any_hit = s1_way_hit[0]
@@ -180,17 +220,17 @@ def build_icache(
     # s2 — Data Mux / Hit-Miss: finalize, MSHR allocation, refill bypass
     # ================================================================
 
-    mshr_free = ~mshr_valid.wire
+    mshr_free = ~wire_of(mshr_valid)
     mshr_alloc = s2_miss_w & s2_valid_w & mshr_free
 
     s2_refill_match = (
-        refill_valid.wire
-        & (refill_set.wire == s2_set_idx_w)
-        & (refill_tag.wire == s2_ptag_w)
+        wire_of(refill_valid)
+        & (wire_of(refill_set) == s2_set_idx_w)
+        & (wire_of(refill_tag) == s2_ptag_w)
     )
 
     s2_resp_hit = s2_hit_w | s2_refill_match
-    s2_resp_data = s2_refill_match.select(refill_data.wire, s2_data_w)
+    s2_resp_data = s2_refill_match.select(wire_of(refill_data), s2_data_w)
     s2_resp_valid = s2_valid_w & s2_resp_hit
 
     # ── Pipeline registers s2 → s3 ─────────────────────────────────
@@ -215,22 +255,24 @@ def build_icache(
 
     # Valid bits: set way-valid on refill (no full-flush in simplified model)
     for w in range(n_ways):
-        wr_way = refill_valid.wire & (refill_way.wire == m.const(w, width=way_bits))
-        one_hot = m.const(1, width=n_sets).shl(amount=refill_set.wire)
-        new_vld = valid_regs[w].wire | one_hot
-        valid_regs[w].set(wr_way.select(new_vld, valid_regs[w].wire))
+        wr_way = wire_of(refill_valid) & (
+            wire_of(refill_way) == m.const(w, width=way_bits)
+        )
+        one_hot = m.const(1, width=n_sets).shl(amount=wire_of(refill_set))
+        new_vld = wire_of(valid_regs[w]) | one_hot
+        valid_regs[w] <<= wr_way.select(new_vld, wire_of(valid_regs[w]))
 
     # MSHR: allocate on miss, clear on refill completion, clear on flush
-    mshr_clear = refill_valid.wire & mshr_valid.wire
+    mshr_clear = wire_of(refill_valid) & wire_of(mshr_valid)
     nv = mshr_clear.select(
         m.const(0, width=1),
-        mshr_alloc.select(m.const(1, width=1), mshr_valid.wire),
+        mshr_alloc.select(m.const(1, width=1), wire_of(mshr_valid)),
     )
-    nv = flush.wire.select(m.const(0, width=1), nv)
-    mshr_valid.set(nv)
+    nv = wire_of(flush).select(m.const(0, width=1), nv)
+    mshr_valid <<= nv
 
-    mshr_set.set(mshr_alloc.select(s2_set_idx_w, mshr_set.wire))
-    mshr_tag.set(mshr_alloc.select(s2_ptag_w, mshr_tag.wire))
+    mshr_set <<= mshr_alloc.select(s2_set_idx_w, wire_of(mshr_set))
+    mshr_tag <<= mshr_alloc.select(s2_ptag_w, wire_of(mshr_tag))
 
     # ================================================================
     # Output ports
@@ -245,20 +287,19 @@ def build_icache(
 
     m.output(f"{prefix}_miss_valid", mshr_alloc)
     _out["miss_valid"] = cas(domain, mshr_alloc, cycle=domain.cycle_index)
-    m.output(f"{prefix}_miss_addr", m.cat(
-        s2_ptag_w,
-        s2_set_idx_w,
-        m.const(0, width=offset_bits),
-    ))
+    m.output(
+        f"{prefix}_miss_addr",
+        m.cat(
+            s2_ptag_w,
+            s2_set_idx_w,
+            m.const(0, width=offset_bits),
+        ),
+    )
     return _out
 
 
-build_icache.__pycircuit_name__ = "icache"
+icache.__pycircuit_name__ = "icache"
 
 
 if __name__ == "__main__":
-    print(compile_cycle_aware(
-        build_icache, name="icache", eager=True,
-        n_sets=ICACHE_SETS, n_ways=ICACHE_WAYS,
-        block_bytes=ICACHE_BLOCK_BYTES, pc_width=PC_WIDTH,
-    ).emit_mlir())
+    pass

@@ -24,6 +24,7 @@ Key features:
   S-XT-004  AXI4 memory port output
   S-XT-005  Debug / JTAG interface
 """
+
 from __future__ import annotations
 
 import sys
@@ -38,9 +39,8 @@ from pycircuit import (
     CycleAwareDomain,
     CycleAwareSignal,
     cas,
-    compile_cycle_aware,
     mux,
-    u,
+    wire_of,
 )
 
 from top.parameters import (
@@ -48,9 +48,8 @@ from top.parameters import (
     PC_WIDTH,
     XLEN,
 )
-
-from top.xs_tile import build_xs_tile
-from top.peripherals import build_plic, build_clint
+from top.peripherals import clint, plic
+from top.xs_tile import xs_tile
 
 BLOCK_BITS = CACHE_LINE_SIZE
 HART_ID_WIDTH = 4
@@ -59,7 +58,7 @@ AXI_ADDR_WIDTH = PC_WIDTH
 AXI_DATA_WIDTH = XLEN
 
 
-def build_xs_top(
+def xs_top(
     m: CycleAwareCircuit,
     domain: CycleAwareDomain,
     *,
@@ -76,7 +75,6 @@ def build_xs_top(
     _in = inputs or {}
     _out: dict[str, CycleAwareSignal] = {}
 
-
     core_sel_w = max(1, (num_cores - 1).bit_length())
 
     ZERO_1 = cas(domain, m.const(0, width=1), cycle=0)
@@ -84,74 +82,117 @@ def build_xs_top(
 
     # ── Sub-module calls ──
     for _i in range(num_cores):
-        domain.push()
-        build_xs_tile(m, domain, prefix=f"{prefix}_s_tile{_i}",
-                      data_width=data_width, pc_width=addr_width,
-                      inputs={})
-        domain.pop()
+        domain.call(
+            xs_tile,
+            inputs={},
+            prefix=f"{prefix}_s_tile{_i}",
+            data_width=data_width,
+            pc_width=addr_width,
+        )
 
-    domain.push()
-    plic_out = build_plic(m, domain, prefix=f"{prefix}_s_plic", inputs={})
-    domain.pop()
+    domain.call(plic, inputs={}, prefix=f"{prefix}_s_plic")
 
-    domain.push()
-    clint_out = build_clint(m, domain, prefix=f"{prefix}_s_clint", inputs={})
-    domain.pop()
+    domain.call(clint, inputs={}, prefix=f"{prefix}_s_clint")
 
     # ================================================================
     # External inputs
     # ================================================================
 
     # Per-core interrupt inputs
-    core_meip = [cas(domain, m.input(f"{prefix}_core{i}_meip", width=1), cycle=0)
-                 for i in range(num_cores)]
-    core_seip = [cas(domain, m.input(f"{prefix}_core{i}_seip", width=1), cycle=0)
-                 for i in range(num_cores)]
-    core_mtip = [cas(domain, m.input(f"{prefix}_core{i}_mtip", width=1), cycle=0)
-                 for i in range(num_cores)]
-    core_msip = [cas(domain, m.input(f"{prefix}_core{i}_msip", width=1), cycle=0)
-                 for i in range(num_cores)]
+    core_meip = [
+        cas(domain, m.input(f"{prefix}_core{i}_meip", width=1), cycle=0)
+        for i in range(num_cores)
+    ]
+    core_seip = [
+        cas(domain, m.input(f"{prefix}_core{i}_seip", width=1), cycle=0)
+        for i in range(num_cores)
+    ]
+    core_mtip = [
+        cas(domain, m.input(f"{prefix}_core{i}_mtip", width=1), cycle=0)
+        for i in range(num_cores)
+    ]
+    core_msip = [
+        cas(domain, m.input(f"{prefix}_core{i}_msip", width=1), cycle=0)
+        for i in range(num_cores)
+    ]
 
     # Debug / JTAG
-    debug_req_valid = (_in["debug_req_valid"] if "debug_req_valid" in _in else
-        cas(domain, m.input(f"{prefix}_debug_req_valid", width=1), cycle=0))
-    debug_req_addr = (_in["debug_req_addr"] if "debug_req_addr" in _in else
-        cas(domain, m.input(f"{prefix}_debug_req_addr", width=addr_width), cycle=0))
-    debug_req_data = (_in["debug_req_data"] if "debug_req_data" in _in else
-        cas(domain, m.input(f"{prefix}_debug_req_data", width=data_width), cycle=0))
-    debug_req_op = (_in["debug_req_op"] if "debug_req_op" in _in else
-        cas(domain, m.input(f"{prefix}_debug_req_op", width=2), cycle=0))
+    debug_req_valid = (
+        _in["debug_req_valid"]
+        if "debug_req_valid" in _in
+        else cas(domain, m.input(f"{prefix}_debug_req_valid", width=1), cycle=0)
+    )
+    (
+        _in["debug_req_addr"]
+        if "debug_req_addr" in _in
+        else cas(domain, m.input(f"{prefix}_debug_req_addr", width=addr_width), cycle=0)
+    )
+    debug_req_data = (
+        _in["debug_req_data"]
+        if "debug_req_data" in _in
+        else cas(domain, m.input(f"{prefix}_debug_req_data", width=data_width), cycle=0)
+    )
+    (
+        _in["debug_req_op"]
+        if "debug_req_op" in _in
+        else cas(domain, m.input(f"{prefix}_debug_req_op", width=2), cycle=0)
+    )
 
     # AXI4 memory port — read response from external memory
-    axi_r_valid = (_in["axi_r_valid"] if "axi_r_valid" in _in else
-        cas(domain, m.input(f"{prefix}_axi_r_valid", width=1), cycle=0))
-    axi_r_data = (_in["axi_r_data"] if "axi_r_data" in _in else
-        cas(domain, m.input(f"{prefix}_axi_r_data", width=data_width), cycle=0))
-    axi_r_id = (_in["axi_r_id"] if "axi_r_id" in _in else
-        cas(domain, m.input(f"{prefix}_axi_r_id", width=axi_id_w), cycle=0))
-    axi_r_last = (_in["axi_r_last"] if "axi_r_last" in _in else
-        cas(domain, m.input(f"{prefix}_axi_r_last", width=1), cycle=0))
+    axi_r_valid = (
+        _in["axi_r_valid"]
+        if "axi_r_valid" in _in
+        else cas(domain, m.input(f"{prefix}_axi_r_valid", width=1), cycle=0)
+    )
+    axi_r_data = (
+        _in["axi_r_data"]
+        if "axi_r_data" in _in
+        else cas(domain, m.input(f"{prefix}_axi_r_data", width=data_width), cycle=0)
+    )
+    axi_r_id = (
+        _in["axi_r_id"]
+        if "axi_r_id" in _in
+        else cas(domain, m.input(f"{prefix}_axi_r_id", width=axi_id_w), cycle=0)
+    )
+    (
+        _in["axi_r_last"]
+        if "axi_r_last" in _in
+        else cas(domain, m.input(f"{prefix}_axi_r_last", width=1), cycle=0)
+    )
 
     # AXI4 write response
-    axi_b_valid = (_in["axi_b_valid"] if "axi_b_valid" in _in else
-        cas(domain, m.input(f"{prefix}_axi_b_valid", width=1), cycle=0))
-    axi_b_id = (_in["axi_b_id"] if "axi_b_id" in _in else
-        cas(domain, m.input(f"{prefix}_axi_b_id", width=axi_id_w), cycle=0))
+    (
+        _in["axi_b_valid"]
+        if "axi_b_valid" in _in
+        else cas(domain, m.input(f"{prefix}_axi_b_valid", width=1), cycle=0)
+    )
+    (
+        _in["axi_b_id"]
+        if "axi_b_id" in _in
+        else cas(domain, m.input(f"{prefix}_axi_b_id", width=axi_id_w), cycle=0)
+    )
 
     # Per-tile downstream request (from tiles → to shared bus)
-    tile_ds_req_valid = [cas(domain, m.input(f"{prefix}_tile{i}_ds_req_valid", width=1), cycle=0)
-                         for i in range(num_cores)]
-    tile_ds_req_addr = [cas(domain, m.input(f"{prefix}_tile{i}_ds_req_addr", width=addr_width), cycle=0)
-                        for i in range(num_cores)]
-    tile_ds_req_source = [cas(domain, m.input(f"{prefix}_tile{i}_ds_req_source", width=1), cycle=0)
-                          for i in range(num_cores)]
+    tile_ds_req_valid = [
+        cas(domain, m.input(f"{prefix}_tile{i}_ds_req_valid", width=1), cycle=0)
+        for i in range(num_cores)
+    ]
+    tile_ds_req_addr = [
+        cas(domain, m.input(f"{prefix}_tile{i}_ds_req_addr", width=addr_width), cycle=0)
+        for i in range(num_cores)
+    ]
+    tile_ds_req_source = [
+        cas(domain, m.input(f"{prefix}_tile{i}_ds_req_source", width=1), cycle=0)
+        for i in range(num_cores)
+    ]
 
     # ================================================================
     # Shared bus arbiter (round-robin simplified)
     # ================================================================
 
-    arb_sel_r = domain.state(width=core_sel_w, reset_value=0, name=f"{prefix}_xs_arb_sel")
-    arb_sel = cas(domain, arb_sel_r.wire, cycle=0)
+    arb_sel = domain.signal(
+        width=core_sel_w, reset_value=0, name=f"{prefix}_xs_arb_sel"
+    )
 
     # Priority select: check current arb_sel first, then wrap
     bus_req_valid = ZERO_1
@@ -180,16 +221,21 @@ def build_xs_top(
     # AXI4 read request output (TileLink → AXI bridge, simplified)
     # ================================================================
 
-    m.output(f"{prefix}_axi_ar_valid", bus_req_valid.wire)
+    m.output(f"{prefix}_axi_ar_valid", wire_of(bus_req_valid))
     _out["axi_ar_valid"] = bus_req_valid
-    m.output(f"{prefix}_axi_ar_addr", bus_req_addr.wire)
+    m.output(f"{prefix}_axi_ar_addr", wire_of(bus_req_addr))
     _out["axi_ar_addr"] = bus_req_addr
     # Encode {core_id, source} into AXI ID
-    axi_out_id = cas(domain,
-                     m.cat(bus_req_core.wire, bus_req_source.wire,
-                           m.const(0, width=max(1, axi_id_w - core_sel_w - 1))),
-                     cycle=0)
-    m.output(f"{prefix}_axi_ar_id", axi_out_id.wire)
+    axi_out_id = cas(
+        domain,
+        m.cat(
+            wire_of(bus_req_core),
+            wire_of(bus_req_source),
+            m.const(0, width=max(1, axi_id_w - core_sel_w - 1)),
+        ),
+        cycle=0,
+    )
+    m.output(f"{prefix}_axi_ar_id", wire_of(axi_out_id))
     _out["axi_ar_id"] = axi_out_id
     m.output(f"{prefix}_axi_ar_len", m.const(0, width=8))  # single beat
     m.output(f"{prefix}_axi_ar_size", m.const(3, width=3))  # 8 bytes
@@ -199,70 +245,66 @@ def build_xs_top(
     # ================================================================
 
     # Decode core_id from AXI R ID
-    resp_core = axi_r_id[1:1 + core_sel_w]
+    resp_core = axi_r_id[1 : 1 + core_sel_w]
     resp_source = axi_r_id[0:1]
 
     for i in range(num_cores):
         i_c = cas(domain, m.const(i, width=core_sel_w), cycle=0)
         is_this_core = resp_core == i_c
-        m.output(f"{prefix}_tile{i}_ds_resp_valid", (axi_r_valid & is_this_core).wire)
-        m.output(f"{prefix}_tile{i}_ds_resp_data", axi_r_data.wire)
-        m.output(f"{prefix}_tile{i}_ds_resp_source", resp_source.wire)
+        m.output(f"{prefix}_tile{i}_ds_resp_valid", wire_of(axi_r_valid & is_this_core))
+        m.output(f"{prefix}_tile{i}_ds_resp_data", wire_of(axi_r_data))
+        m.output(f"{prefix}_tile{i}_ds_resp_source", wire_of(resp_source))
 
     # ================================================================
     # Per-core interrupt routing
     # ================================================================
 
     for i in range(num_cores):
-        m.output(f"{prefix}_tile{i}_meip", core_meip[i].wire)
-        m.output(f"{prefix}_tile{i}_seip", core_seip[i].wire)
-        m.output(f"{prefix}_tile{i}_mtip", core_mtip[i].wire)
-        m.output(f"{prefix}_tile{i}_msip", core_msip[i].wire)
+        m.output(f"{prefix}_tile{i}_meip", wire_of(core_meip[i]))
+        m.output(f"{prefix}_tile{i}_seip", wire_of(core_seip[i]))
+        m.output(f"{prefix}_tile{i}_mtip", wire_of(core_mtip[i]))
+        m.output(f"{prefix}_tile{i}_msip", wire_of(core_msip[i]))
         m.output(f"{prefix}_tile{i}_hart_id", m.const(i, width=hart_id_w))
 
     # ================================================================
     # Debug port output
     # ================================================================
 
-    m.output(f"{prefix}_debug_resp_valid", debug_req_valid.wire)
+    m.output(f"{prefix}_debug_resp_valid", wire_of(debug_req_valid))
     _out["debug_resp_valid"] = debug_req_valid
-    m.output(f"{prefix}_debug_resp_data", debug_req_data.wire)
+    m.output(f"{prefix}_debug_resp_data", wire_of(debug_req_data))
     _out["debug_resp_data"] = debug_req_data
 
     # ================================================================
     # Pipeline register + arbiter state update
     # ================================================================
 
-    s1_bus_valid = domain.cycle(bus_req_valid.wire, name=f"{prefix}_xs_s1_bv")
-    s1_bus_core = domain.cycle(bus_req_core.wire, name=f"{prefix}_xs_s1_bc")
+    domain.cycle(wire_of(bus_req_valid), name=f"{prefix}_xs_s1_bv")
+    domain.cycle(wire_of(bus_req_core), name=f"{prefix}_xs_s1_bc")
 
     domain.next()
 
     # Round-robin: advance selector when a request fires
     one_sel = cas(domain, m.const(1, width=core_sel_w), cycle=0)
     max_sel = cas(domain, m.const(num_cores - 1, width=core_sel_w), cycle=0)
-    next_sel = cas(domain, (arb_sel.wire + one_sel.wire)[0:core_sel_w], cycle=0)
-    wrap_sel = mux(arb_sel == max_sel,
-                   cas(domain, m.const(0, width=core_sel_w), cycle=0),
-                   next_sel)
-    arb_sel_r.set(mux(bus_req_valid, wrap_sel, arb_sel))
+    next_sel = cas(domain, (wire_of(arb_sel) + wire_of(one_sel))[0:core_sel_w], cycle=0)
+    wrap_sel = mux(
+        arb_sel == max_sel, cas(domain, m.const(0, width=core_sel_w), cycle=0), next_sel
+    )
+    arb_sel <<= mux(bus_req_valid, wrap_sel, arb_sel)
 
     # AXI write channel (simplified: no write support yet)
-    m.output(f"{prefix}_axi_aw_valid", ZERO_1.wire)
+    m.output(f"{prefix}_axi_aw_valid", wire_of(ZERO_1))
     _out["axi_aw_valid"] = ZERO_1
-    m.output(f"{prefix}_axi_w_valid", ZERO_1.wire)
+    m.output(f"{prefix}_axi_w_valid", wire_of(ZERO_1))
     _out["axi_w_valid"] = ZERO_1
-    m.output(f"{prefix}_axi_b_ready", ONE_1.wire)
+    m.output(f"{prefix}_axi_b_ready", wire_of(ONE_1))
     _out["axi_b_ready"] = ONE_1
     return _out
 
 
-build_xs_top.__pycircuit_name__ = "xs_top"
+xs_top.__pycircuit_name__ = "xs_top"
 
 
 if __name__ == "__main__":
-    print(compile_cycle_aware(
-        build_xs_top, name="xs_top", eager=True,
-        num_cores=2, data_width=16, addr_width=16,
-        block_bits=128, hart_id_w=4, axi_id_w=4,
-    ).emit_mlir())
+    pass

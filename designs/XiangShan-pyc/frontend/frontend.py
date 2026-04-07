@@ -21,6 +21,7 @@ Key features:
   F-FE-005  Backpressure: IBuffer full stalls IFU
   F-FE-006  Decoded uops output to backend dispatch
 """
+
 from __future__ import annotations
 
 import sys
@@ -35,36 +36,30 @@ from pycircuit import (
     CycleAwareDomain,
     CycleAwareSignal,
     cas,
-    compile_cycle_aware,
     mux,
-    u,
+    wire_of,
 )
-
 from top.parameters import (
-    CACHE_LINE_SIZE,
     DECODE_WIDTH,
     FETCH_BLOCK_SIZE,
     ICACHE_BLOCK_BYTES,
     INST_BYTES,
     PC_WIDTH,
-    PREDICT_WIDTH,
-    PTAG_WIDTH_INT,
-    ROB_IDX_WIDTH,
 )
 
 INST_WIDTH = 32
 FETCH_WIDTH = FETCH_BLOCK_SIZE // INST_BYTES
 BLOCK_BITS = ICACHE_BLOCK_BYTES * 8
 
-from frontend.bpu.bpu import build_bpu
-from frontend.ftq.ftq import build_ftq
-from frontend.icache.icache import build_icache
-from frontend.ifu.ifu import build_ifu
-from frontend.ibuffer.ibuffer import build_ibuffer
-from frontend.decode.decode import build_decode
+from frontend.bpu.bpu import bpu
+from frontend.decode.decode import decode
+from frontend.ftq.ftq import ftq
+from frontend.ibuffer.ibuffer import ibuffer
+from frontend.icache.icache import icache
+from frontend.ifu.ifu import ifu
 
 
-def build_frontend(
+def frontend(
     m: CycleAwareCircuit,
     domain: CycleAwareDomain,
     *,
@@ -80,38 +75,24 @@ def build_frontend(
     _in = inputs or {}
     _out: dict[str, CycleAwareSignal] = {}
 
-
     # ── Sub-module calls ──
-    domain.push()
-    bpu_out = build_bpu(m, domain, prefix=f"{prefix}_s_bpu",
-                        pc_width=pc_width, inputs={})
-    domain.pop()
+    domain.call(bpu, inputs={}, prefix=f"{prefix}_s_bpu", pc_width=pc_width)
 
-    domain.push()
-    ftq_out = build_ftq(m, domain, prefix=f"{prefix}_s_ftq",
-                        pc_width=pc_width, inputs={})
-    domain.pop()
+    domain.call(ftq, inputs={}, prefix=f"{prefix}_s_ftq", pc_width=pc_width)
 
-    domain.push()
-    ic_out = build_icache(m, domain, prefix=f"{prefix}_s_ic",
-                          pc_width=pc_width, inputs={})
-    domain.pop()
+    domain.call(icache, inputs={}, prefix=f"{prefix}_s_ic", pc_width=pc_width)
 
-    domain.push()
-    ifu_out = build_ifu(m, domain, prefix=f"{prefix}_s_ifu",
-                        pc_width=pc_width, inputs={})
-    domain.pop()
+    domain.call(ifu, inputs={}, prefix=f"{prefix}_s_ifu", pc_width=pc_width)
 
-    domain.push()
-    ibuf_out = build_ibuffer(m, domain, prefix=f"{prefix}_s_ibuf",
-                             deq_width=decode_width, inputs={})
-    domain.pop()
+    domain.call(ibuffer, inputs={}, prefix=f"{prefix}_s_ibuf", deq_width=decode_width)
 
-    domain.push()
-    dec_out = build_decode(m, domain, prefix=f"{prefix}_s_dec",
-                           decode_width=decode_width, pc_width=pc_width,
-                           inputs={})
-    domain.pop()
+    domain.call(
+        decode,
+        inputs={},
+        prefix=f"{prefix}_s_dec",
+        decode_width=decode_width,
+        pc_width=pc_width,
+    )
 
     pred_block_bytes = FETCH_BLOCK_SIZE
 
@@ -120,36 +101,48 @@ def build_frontend(
     # ================================================================
 
     # Backend redirect (highest priority)
-    redirect_valid = (_in["redirect_valid"] if "redirect_valid" in _in else
-        cas(domain, m.input(f"{prefix}_redirect_valid", width=1), cycle=0))
-    redirect_target = (_in["redirect_target"] if "redirect_target" in _in else
-        cas(domain, m.input(f"{prefix}_redirect_target", width=pc_width), cycle=0))
+    redirect_valid = (
+        _in["redirect_valid"]
+        if "redirect_valid" in _in
+        else cas(domain, m.input(f"{prefix}_redirect_valid", width=1), cycle=0)
+    )
+    redirect_target = (
+        _in["redirect_target"]
+        if "redirect_target" in _in
+        else cas(domain, m.input(f"{prefix}_redirect_target", width=pc_width), cycle=0)
+    )
 
     # Backpressure from IBuffer / decode
-    ibuf_ready = (_in["ibuf_ready"] if "ibuf_ready" in _in else
-        cas(domain, m.input(f"{prefix}_ibuf_ready", width=1), cycle=0))
+    ibuf_ready = (
+        _in["ibuf_ready"]
+        if "ibuf_ready" in _in
+        else cas(domain, m.input(f"{prefix}_ibuf_ready", width=1), cycle=0)
+    )
 
     # ICache refill interface (from L2)
-    refill_valid = (_in["refill_valid"] if "refill_valid" in _in else
-        cas(domain, m.input(f"{prefix}_refill_valid", width=1), cycle=0))
-    refill_data = (_in["refill_data"] if "refill_data" in _in else
-        cas(domain, m.input(f"{prefix}_refill_data", width=block_bits), cycle=0))
+    refill_valid = (
+        _in["refill_valid"]
+        if "refill_valid" in _in
+        else cas(domain, m.input(f"{prefix}_refill_valid", width=1), cycle=0)
+    )
+    refill_data = (
+        _in["refill_data"]
+        if "refill_data" in _in
+        else cas(domain, m.input(f"{prefix}_refill_data", width=block_bits), cycle=0)
+    )
 
-    ZERO_1 = cas(domain, m.const(0, width=1), cycle=0)
+    cas(domain, m.const(0, width=1), cycle=0)
     ONE_1 = cas(domain, m.const(1, width=1), cycle=0)
-    ZERO_PC = cas(domain, m.const(0, width=pc_width), cycle=0)
+    cas(domain, m.const(0, width=pc_width), cycle=0)
     FALLTHROUGH = cas(domain, m.const(pred_block_bytes, width=pc_width), cycle=0)
 
     # BPU state: fetch PC register
-    fetch_pc_r = domain.state(width=pc_width, reset_value=0, name=f"{prefix}_fetch_pc")
-    bpu_valid_r = domain.state(width=1, reset_value=0, name=f"{prefix}_bpu_valid")
-
-    fetch_pc = cas(domain, fetch_pc_r.wire, cycle=0)
-    bpu_valid = cas(domain, bpu_valid_r.wire, cycle=0)
+    fetch_pc = domain.signal(width=pc_width, reset_value=0, name=f"{prefix}_fetch_pc")
+    bpu_valid = domain.signal(width=1, reset_value=0, name=f"{prefix}_bpu_valid")
 
     # BPU simplified prediction: fallthrough unless redirected
     bpu_pred_target = cas(
-        domain, (fetch_pc.wire + FALLTHROUGH.wire)[0:pc_width], cycle=0
+        domain, (wire_of(fetch_pc) + wire_of(FALLTHROUGH))[0:pc_width], cycle=0
     )
 
     # Flush pipeline on redirect
@@ -163,16 +156,16 @@ def build_frontend(
     next_pc = mux(s0_fire, bpu_pred_target, next_pc)
     next_pc = mux(redirect_valid, redirect_target, next_pc)
 
-    m.output(f"{prefix}_bpu_pred_pc", fetch_pc.wire)
+    m.output(f"{prefix}_bpu_pred_pc", wire_of(fetch_pc))
     _out["bpu_pred_pc"] = fetch_pc
-    m.output(f"{prefix}_bpu_pred_target", bpu_pred_target.wire)
+    m.output(f"{prefix}_bpu_pred_target", wire_of(bpu_pred_target))
     _out["bpu_pred_target"] = bpu_pred_target
-    m.output(f"{prefix}_bpu_pred_valid", s0_fire.wire)
+    m.output(f"{prefix}_bpu_pred_valid", wire_of(s0_fire))
     _out["bpu_pred_valid"] = s0_fire
 
     # ── Pipeline registers: cycle 0 → cycle 1 ─────────────────────
-    s1_valid_w = domain.cycle(s0_fire.wire, name=f"{prefix}_s1_v")
-    s1_pc_w = domain.cycle(fetch_pc.wire, name=f"{prefix}_s1_pc")
+    s1_valid_w = domain.cycle(wire_of(s0_fire), name=f"{prefix}_s1_v")
+    s1_pc_w = domain.cycle(wire_of(fetch_pc), name=f"{prefix}_s1_pc")
 
     domain.next()
 
@@ -180,11 +173,11 @@ def build_frontend(
     # Cycle 1 — ICache fetch (simplified: single-cycle hit model)
     # ================================================================
 
-    s1_valid = s1_valid_w & (~redirect_valid.wire)
+    s1_valid = s1_valid_w & (~wire_of(redirect_valid))
 
     # ICache hit model: refill_valid acts as data-ready signal
-    s1_resp_valid = s1_valid & refill_valid.wire
-    s1_miss = s1_valid & (~refill_valid.wire)
+    s1_resp_valid = s1_valid & wire_of(refill_valid)
+    s1_miss = s1_valid & (~wire_of(refill_valid))
 
     m.output(f"{prefix}_icache_miss_valid", s1_miss)
     _out["icache_miss_valid"] = cas(domain, s1_miss, cycle=domain.cycle_index)
@@ -194,7 +187,7 @@ def build_frontend(
     # ── Pipeline registers: cycle 1 → cycle 2 ─────────────────────
     s2_valid_w = domain.cycle(s1_resp_valid, name=f"{prefix}_s2_v")
     s2_pc_w = domain.cycle(s1_pc_w, name=f"{prefix}_s2_pc")
-    s2_data_w = domain.cycle(refill_data.wire, name=f"{prefix}_s2_data")
+    s2_data_w = domain.cycle(wire_of(refill_data), name=f"{prefix}_s2_data")
 
     domain.next()
 
@@ -202,7 +195,7 @@ def build_frontend(
     # Cycle 2 — IFU: instruction extraction + IBuffer enqueue
     # ================================================================
 
-    s2_valid = s2_valid_w & (~redirect_valid.wire)
+    s2_valid = s2_valid_w & (~wire_of(redirect_valid))
 
     # Simplified instruction extraction: slice block into inst_width chunks
     ifu_insts = []
@@ -217,8 +210,10 @@ def build_frontend(
     # ── Pipeline registers: cycle 2 → cycle 3 ─────────────────────
     s3_valid_w = domain.cycle(s2_valid, name=f"{prefix}_s3_v")
     s3_pc_w = domain.cycle(s2_pc_w, name=f"{prefix}_s3_pc")
-    s3_insts_w = [domain.cycle(ifu_insts[i], name=f"{prefix}_s3_inst_{i}")
-                  for i in range(decode_width)]
+    s3_insts_w = [
+        domain.cycle(ifu_insts[i], name=f"{prefix}_s3_inst_{i}")
+        for i in range(decode_width)
+    ]
 
     domain.next()
 
@@ -226,7 +221,7 @@ def build_frontend(
     # Cycle 3 — Decode outputs to backend
     # ================================================================
 
-    s3_valid = s3_valid_w & (~redirect_valid.wire)
+    s3_valid = s3_valid_w & (~wire_of(redirect_valid))
 
     for i in range(decode_width):
         inst_pc = (s3_pc_w + m.const(i * INST_BYTES, width=pc_width))[0:pc_width]
@@ -234,7 +229,7 @@ def build_frontend(
         m.output(f"{prefix}_dec_inst_{i}", s3_insts_w[i])
         m.output(f"{prefix}_dec_pc_{i}", inst_pc)
 
-    m.output(f"{prefix}_frontend_stall", ~ibuf_ready.wire)
+    m.output(f"{prefix}_frontend_stall", ~wire_of(ibuf_ready))
 
     # ================================================================
     # State updates (after last domain.next)
@@ -242,17 +237,13 @@ def build_frontend(
 
     domain.next()
 
-    bpu_valid_r.set(ONE_1)
-    fetch_pc_r.set(next_pc)
+    bpu_valid <<= ONE_1
+    fetch_pc <<= next_pc
     return _out
 
 
-build_frontend.__pycircuit_name__ = "frontend"
+frontend.__pycircuit_name__ = "frontend"
 
 
 if __name__ == "__main__":
-    print(compile_cycle_aware(
-        build_frontend, name="frontend", eager=True,
-        decode_width=2, pc_width=16, fetch_width=4,
-        inst_width=32, block_bits=128,
-    ).emit_mlir())
+    pass

@@ -6,9 +6,8 @@ from pycircuit import (
     ProbeBuilder,
     ProbeView,
     cas,
-    compile_cycle_aware,
-    mux,
     probe,
+    wire_of,
 )
 
 
@@ -16,7 +15,7 @@ def build(m: CycleAwareCircuit, domain: CycleAwareDomain, width: int = 8) -> Non
     en = cas(domain, m.input("en", width=1), cycle=0)
 
     q = domain.state(width=width, reset_value=0, name="q")
-    m.output("y", q.wire)
+    m.output("y", wire_of(q))
 
     domain.next()
     q.set(q + 1, when=en)
@@ -38,4 +37,4 @@ def reset_probe(p: ProbeBuilder, dut: ProbeView, width: int = 8) -> None:
 
 
 if __name__ == "__main__":
-    print(compile_cycle_aware(build, name="reset_invalidate_order_smoke", eager=True, width=8).emit_mlir())
+    pass

@@ -4,7 +4,7 @@ from pycircuit import (
     CycleAwareCircuit,
     CycleAwareDomain,
     cas,
-    compile_cycle_aware,
+    wire_of,
 )
 
 
@@ -12,17 +12,17 @@ def build(m: CycleAwareCircuit, domain: CycleAwareDomain, width: int = 8) -> Non
     x = cas(domain, m.input("x", width=width), cycle=0)
     y = x + 1
 
-    q = domain.state(width=width, reset_value=0, name="q")
+    q = domain.signal(width=width, reset_value=0, name="q")
 
-    m.output("y", y.wire)
-    m.output("q", q.wire)
+    m.output("y", wire_of(y))
+    m.output("q", wire_of(q))
 
     domain.next()
-    q.set(y)
+    q <<= y
 
 
 build.__pycircuit_name__ = "obs_points"
 
 
 if __name__ == "__main__":
-    print(compile_cycle_aware(build, name="obs_points", eager=True, width=8).emit_mlir())
+    pass

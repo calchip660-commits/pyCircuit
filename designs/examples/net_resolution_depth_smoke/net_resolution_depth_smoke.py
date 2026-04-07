@@ -4,7 +4,7 @@ from pycircuit import (
     CycleAwareCircuit,
     CycleAwareDomain,
     cas,
-    compile_cycle_aware,
+    wire_of,
 )
 
 
@@ -16,15 +16,15 @@ def build(m: CycleAwareCircuit, domain: CycleAwareDomain, width: int = 8) -> Non
     d2 = d1 + 1
     d3 = d2 + 1
 
-    q = domain.state(width=width, reset_value=0, name="q")
-    m.output("y", q.wire)
+    q = domain.signal(width=width, reset_value=0, name="q")
+    m.output("y", wire_of(q))
 
     domain.next()
-    q.set(d3)
+    q <<= d3
 
 
 build.__pycircuit_name__ = "net_resolution_depth_smoke"
 
 
 if __name__ == "__main__":
-    print(compile_cycle_aware(build, name="net_resolution_depth_smoke", eager=True, width=8).emit_mlir())
+    pass

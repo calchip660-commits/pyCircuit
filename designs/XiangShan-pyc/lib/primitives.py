@@ -3,6 +3,7 @@
 All functions operate on CycleAwareSignal values and are intended to be called
 inside a ``build_*`` function body.
 """
+
 from __future__ import annotations
 
 from pycircuit import (
@@ -10,15 +11,15 @@ from pycircuit import (
     CycleAwareDomain,
     CycleAwareSignal,
     cas,
-    compile_cycle_aware,
     mux,
     u,
+    wire_of,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _zero(m: CycleAwareCircuit, domain: CycleAwareDomain, w: int) -> CycleAwareSignal:
     """Return a ``w``-bit zero constant anchored at the current cycle."""
@@ -34,6 +35,7 @@ def _ones(m: CycleAwareCircuit, domain: CycleAwareDomain, w: int) -> CycleAwareS
 # mux1h — one-hot multiplexer
 # ---------------------------------------------------------------------------
 
+
 def mux1h(
     m: CycleAwareCircuit,
     domain: CycleAwareDomain,
@@ -47,7 +49,7 @@ def mux1h(
     """
     assert len(sels) == len(vals), "sels and vals must have the same length"
     result = _zero(m, domain, width)
-    for sel, val in zip(sels, vals):
+    for sel, val in zip(sels, vals, strict=False):
         result = mux(sel, val, result)
     return result
 
@@ -72,6 +74,7 @@ def mux_lookup(
 # popcount — population count (reduction tree)
 # ---------------------------------------------------------------------------
 
+
 def popcount(
     m: CycleAwareCircuit,
     domain: CycleAwareDomain,
@@ -82,14 +85,22 @@ def popcount(
     if not bits:
         return _zero(m, domain, out_width)
     if len(bits) == 1:
-        return cas(domain, bits[0].wire + u(out_width, 0), cycle=domain.cycle_index)
+        return cas(domain, wire_of(bits[0]) + u(out_width, 0), cycle=domain.cycle_index)
 
-    extended = [cas(domain, b.wire + u(out_width, 0), cycle=domain.cycle_index) for b in bits]
+    extended = [
+        cas(domain, wire_of(b) + u(out_width, 0), cycle=domain.cycle_index)
+        for b in bits
+    ]
     while len(extended) > 1:
         nxt: list[CycleAwareSignal] = []
         for i in range(0, len(extended) - 1, 2):
-            nxt.append(cas(domain, (extended[i].wire + extended[i + 1].wire)[0:out_width],
-                           cycle=domain.cycle_index))
+            nxt.append(
+                cas(
+                    domain,
+                    (wire_of(extended[i]) + wire_of(extended[i + 1]))[0:out_width],
+                    cycle=domain.cycle_index,
+                )
+            )
         if len(extended) % 2 == 1:
             nxt.append(extended[-1])
         extended = nxt
@@ -99,6 +110,7 @@ def popcount(
 # ---------------------------------------------------------------------------
 # priority_enc — priority encoder (LSB has highest priority)
 # ---------------------------------------------------------------------------
+
 
 def priority_enc(
     m: CycleAwareCircuit,
@@ -112,7 +124,11 @@ def priority_enc(
     """
     result = _zero(m, domain, out_width)
     for i in reversed(range(len(bits))):
-        result = mux(bits[i], cas(domain, m.const(i, width=out_width), cycle=domain.cycle_index), result)
+        result = mux(
+            bits[i],
+            cas(domain, m.const(i, width=out_width), cycle=domain.cycle_index),
+            result,
+        )
     return result
 
 
@@ -134,6 +150,7 @@ def priority_enc_with_valid(
 # leading_zeros
 # ---------------------------------------------------------------------------
 
+
 def leading_zeros(
     m: CycleAwareCircuit,
     domain: CycleAwareDomain,
@@ -144,14 +161,18 @@ def leading_zeros(
     n = len(bits)
     result = cas(domain, m.const(n, width=out_width), cycle=domain.cycle_index)
     for i in range(n):
-        result = mux(bits[i], cas(domain, m.const(n - 1 - i, width=out_width),
-                                  cycle=domain.cycle_index), result)
+        result = mux(
+            bits[i],
+            cas(domain, m.const(n - 1 - i, width=out_width), cycle=domain.cycle_index),
+            result,
+        )
     return result
 
 
 # ---------------------------------------------------------------------------
 # or_reduce / and_reduce / xor_reduce
 # ---------------------------------------------------------------------------
+
 
 def or_reduce(
     m: CycleAwareCircuit,
@@ -193,50 +214,65 @@ def xor_reduce(
 # Standalone build wrappers (for emit_mlir / testing)
 # ---------------------------------------------------------------------------
 
-def build_mux1h(m: CycleAwareCircuit, domain: CycleAwareDomain, *, n: int = 4, width: int = 8):
-    sels = [cas(domain, m.input(f"{prefix}_sel{i}", width=1), cycle=0) for i in range(n)]
-    vals = [cas(domain, m.input(f"{prefix}_val{i}", width=width), cycle=0) for i in range(n)]
+
+def mux1h(
+    m: CycleAwareCircuit, domain: CycleAwareDomain, *, n: int = 4, width: int = 8
+):
+    sels = [
+        cas(domain, m.input(f"{prefix}_sel{i}", width=1), cycle=0) for i in range(n)
+    ]
+    vals = [
+        cas(domain, m.input(f"{prefix}_val{i}", width=width), cycle=0) for i in range(n)
+    ]
     result = mux1h(m, domain, sels, vals, width)
-    m.output("out", result.wire)
-
-build_mux1h.__pycircuit_name__ = "mux1h"
+    m.output("out", wire_of(result))
 
 
-def build_popcount(m: CycleAwareCircuit, domain: CycleAwareDomain, *, n: int = 8):
+mux1h.__pycircuit_name__ = "mux1h"
+
+
+def popcount(m: CycleAwareCircuit, domain: CycleAwareDomain, *, n: int = 8):
     out_w = max(1, (n).bit_length())
-    bits = [cas(domain, m.input(f"{prefix}_bit{i}", width=1), cycle=0) for i in range(n)]
+    bits = [
+        cas(domain, m.input(f"{prefix}_bit{i}", width=1), cycle=0) for i in range(n)
+    ]
     result = popcount(m, domain, bits, out_w)
-    m.output("count", result.wire)
-
-build_popcount.__pycircuit_name__ = "popcount"
+    m.output("count", wire_of(result))
 
 
-def build_priority_enc(m: CycleAwareCircuit, domain: CycleAwareDomain, *, n: int = 8):
+popcount.__pycircuit_name__ = "popcount"
+
+
+def priority_enc(m: CycleAwareCircuit, domain: CycleAwareDomain, *, n: int = 8):
     out_w = max(1, (n - 1).bit_length())
-    bits = [cas(domain, m.input(f"{prefix}_bit{i}", width=1), cycle=0) for i in range(n)]
+    bits = [
+        cas(domain, m.input(f"{prefix}_bit{i}", width=1), cycle=0) for i in range(n)
+    ]
     valid, idx = priority_enc_with_valid(m, domain, bits, out_w)
-    m.output("valid", valid.wire)
-    m.output("idx", idx.wire)
-
-build_priority_enc.__pycircuit_name__ = "priority_enc"
+    m.output("valid", wire_of(valid))
+    m.output("idx", wire_of(idx))
 
 
-def build_leading_zeros(m: CycleAwareCircuit, domain: CycleAwareDomain, *, n: int = 8):
+priority_enc.__pycircuit_name__ = "priority_enc"
+
+
+def leading_zeros(m: CycleAwareCircuit, domain: CycleAwareDomain, *, n: int = 8):
     out_w = max(1, n.bit_length())
-    bits = [cas(domain, m.input(f"{prefix}_bit{i}", width=1), cycle=0) for i in range(n)]
+    bits = [
+        cas(domain, m.input(f"{prefix}_bit{i}", width=1), cycle=0) for i in range(n)
+    ]
     result = leading_zeros(m, domain, bits, out_w)
-    m.output("count", result.wire)
+    m.output("count", wire_of(result))
 
-build_leading_zeros.__pycircuit_name__ = "leading_zeros"
+
+leading_zeros.__pycircuit_name__ = "leading_zeros"
 
 
 if __name__ == "__main__":
-    for builder, name in [
-        (build_mux1h, "mux1h"),
-        (build_popcount, "popcount"),
-        (build_priority_enc, "priority_enc"),
-        (build_leading_zeros, "leading_zeros"),
+    for _builder, _name in [
+        (mux1h, "mux1h"),
+        (popcount, "popcount"),
+        (priority_enc, "priority_enc"),
+        (leading_zeros, "leading_zeros"),
     ]:
-        print(f"// === {name} ===")
-        print(compile_cycle_aware(builder, name=name, eager=True).emit_mlir())
-        print()
+        pass

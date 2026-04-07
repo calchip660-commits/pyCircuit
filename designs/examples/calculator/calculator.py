@@ -1,6 +1,12 @@
 from __future__ import annotations
 
-from pycircuit import Circuit, module, compile_cycle_aware, CycleAwareCircuit, CycleAwareDomain, unsigned, u
+from pycircuit import (
+    CycleAwareCircuit,
+    CycleAwareDomain,
+    cas,
+    unsigned,
+    wire_of,
+)
 
 KEY_ADD = 10
 KEY_SUB = 11
@@ -16,83 +22,88 @@ OP_DIV = 3
 
 
 def build(m: CycleAwareCircuit, domain: CycleAwareDomain) -> None:
-    cd = domain.clock_domain
-    clk = cd.clk
-    rst = cd.rst
-    key = m.input("key", width=5)
-    key_press = m.input("key_press", width=1)
+    key = cas(domain, m.input("key", width=5), cycle=0)
+    key_press = cas(domain, m.input("key_press", width=1), cycle=0)
 
-    lhs = m.out("lhs", domain=cd, width=64, init=u(64, 0))
-    rhs = m.out("rhs", domain=cd, width=64, init=u(64, 0))
-    op = m.out("op", domain=cd, width=2, init=u(2, 0))
-    in_rhs = m.out("in_rhs", domain=cd, width=1, init=u(1, 0))
-    display = m.out("display_r", domain=cd, width=64, init=u(64, 0))
+    lhs = domain.signal(width=64, reset_value=0, name="lhs")
+    rhs = domain.signal(width=64, reset_value=0, name="rhs")
+    op = domain.signal(width=2, reset_value=0, name="op")
+    in_rhs = domain.signal(width=1, reset_value=0, name="in_rhs")
+    display = domain.signal(width=64, reset_value=0, name="display_r")
 
-    digit = unsigned(key[0:4]) + u(64, 0)
-    is_digit = key_press & (key <= u(5, 9))
-    is_add = key_press & (key == u(5, KEY_ADD))
-    is_sub = key_press & (key == u(5, KEY_SUB))
-    is_mul = key_press & (key == u(5, KEY_MUL))
-    is_div = key_press & (key == u(5, KEY_DIV))
-    is_eq = key_press & (key == u(5, KEY_EQ))
-    is_ac = key_press & (key == u(5, KEY_AC))
+    digit_lo = unsigned(wire_of(key[0:4]))
+    digit = cas(domain, digit_lo._zext(width=64), cycle=0)
 
-    lhs_n = lhs.out()
-    rhs_n = rhs.out()
-    op_n = op.out()
-    in_rhs_n = in_rhs.out()
-    disp_n = display.out()
+    is_digit = key_press & (key <= 9)
+    is_add = key_press & (key == KEY_ADD)
+    is_sub = key_press & (key == KEY_SUB)
+    is_mul = key_press & (key == KEY_MUL)
+    is_div = key_press & (key == KEY_DIV)
+    is_eq = key_press & (key == KEY_EQ)
+    is_ac = key_press & (key == KEY_AC)
 
-    if is_digit:
-        if in_rhs_n:
-            rhs_n = rhs_n * u(64, 10) + digit
-            disp_n = rhs_n
-        else:
-            lhs_n = lhs_n * u(64, 10) + digit
-            disp_n = lhs_n
+    lhs_n = lhs
+    rhs_n = rhs
+    op_n = op
+    in_rhs_n = in_rhs
+    disp_n = display
 
-    if is_add | is_sub | is_mul | is_div:
-        in_rhs_n = u(1, 1)
-        rhs_n = u(64, 0)
-        op_n = u(2, OP_ADD) if is_add else op_n
-        op_n = u(2, OP_SUB) if is_sub else op_n
-        op_n = u(2, OP_MUL) if is_mul else op_n
-        op_n = u(2, OP_DIV) if is_div else op_n
+    rhs_new = rhs_n * 10 + digit
+    lhs_new = lhs_n * 10 + digit
+    rhs_a = rhs_new if (is_digit & in_rhs_n) else rhs_n
+    disp_a = rhs_new if (is_digit & in_rhs_n) else disp_n
+    lhs_a = lhs_new if (is_digit & ~in_rhs_n) else lhs_n
+    disp_a = lhs_new if (is_digit & ~in_rhs_n) else disp_a
 
-    if is_eq:
-        result = lhs_n
-        if op_n == u(2, OP_ADD):
-            result = lhs_n + rhs_n
-        elif op_n == u(2, OP_SUB):
-            result = lhs_n - rhs_n
-        elif op_n == u(2, OP_MUL):
-            result = lhs_n * rhs_n
-        elif op_n == u(2, OP_DIV):
-            result = lhs_n // (rhs_n if rhs_n != u(64, 0) else u(64, 1))
-        lhs_n = result
-        rhs_n = u(64, 0)
-        in_rhs_n = u(1, 0)
-        disp_n = result
+    op_sel = is_add | is_sub | is_mul | is_div
+    in_rhs_b = 1 if op_sel else in_rhs_n
+    rhs_b = 0 if op_sel else rhs_a
+    lhs_b = lhs_a
+    disp_b = disp_a
 
-    if is_ac:
-        lhs_n = u(64, 0)
-        rhs_n = u(64, 0)
-        op_n = u(2, 0)
-        in_rhs_n = u(1, 0)
-        disp_n = u(64, 0)
+    op_b = op_n
+    op_b = OP_ADD if is_add else op_b
+    op_b = OP_SUB if is_sub else op_b
+    op_b = OP_MUL if is_mul else op_b
+    op_b = OP_DIV if is_div else op_b
 
-    lhs.set(lhs_n)
-    rhs.set(rhs_n)
-    op.set(op_n)
-    in_rhs.set(in_rhs_n)
-    display.set(disp_n)
+    rhs_safe = rhs_b if (rhs_b != 0) else 1
+    result = lhs_b
+    result = (lhs_b + rhs_b) if (op_b == OP_ADD) else result
+    result = (lhs_b - rhs_b) if (op_b == OP_SUB) else result
+    result = (lhs_b * rhs_b) if (op_b == OP_MUL) else result
+    result = (
+        cas(domain, wire_of(lhs_b) // wire_of(rhs_safe), cycle=0)
+        if (op_b == OP_DIV)
+        else result
+    )
 
-    m.output("display", display)
-    m.output("op_pending", op)
+    lhs_c = result if is_eq else lhs_b
+    rhs_c = 0 if is_eq else rhs_b
+    in_rhs_c = 0 if is_eq else in_rhs_b
+    disp_c = result if is_eq else disp_b
+    op_c = op_b
+
+    lhs_next = 0 if is_ac else lhs_c
+    rhs_next = 0 if is_ac else rhs_c
+    op_next = 0 if is_ac else op_c
+    in_rhs_next = 0 if is_ac else in_rhs_c
+    disp_next = 0 if is_ac else disp_c
+
+    m.output("display", wire_of(display))
+    m.output("op_pending", wire_of(op))
+
+    domain.next()
+
+    lhs <<= lhs_next
+    rhs <<= rhs_next
+    op <<= op_next
+    in_rhs <<= in_rhs_next
+    display <<= disp_next
 
 
 build.__pycircuit_name__ = "calculator"
 
 
 if __name__ == "__main__":
-    print(compile_cycle_aware(build, name="calculator").emit_mlir())
+    pass

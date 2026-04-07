@@ -24,6 +24,7 @@ Key features:
   T-XT-003  Hart ID configuration port
   T-XT-004  Interrupt routing
 """
+
 from __future__ import annotations
 
 import sys
@@ -33,14 +34,14 @@ _XS_ROOT = Path(__file__).resolve().parent.parent
 if str(_XS_ROOT) not in sys.path:
     sys.path.insert(0, str(_XS_ROOT))
 
+from l2.l2_top import l2_top
 from pycircuit import (
     CycleAwareCircuit,
     CycleAwareDomain,
     CycleAwareSignal,
     cas,
-    compile_cycle_aware,
     mux,
-    u,
+    wire_of,
 )
 
 from top.parameters import (
@@ -54,9 +55,7 @@ from top.parameters import (
     ROB_IDX_WIDTH,
     XLEN,
 )
-
-from top.xs_core import build_xs_core
-from l2.l2_top import build_l2_top
+from top.xs_core import xs_core
 
 BLOCK_BITS = CACHE_LINE_SIZE
 FU_TYPE_WIDTH = 3
@@ -64,7 +63,7 @@ NUM_WB_PORTS = 4
 HART_ID_WIDTH = 4
 
 
-def build_xs_tile(
+def xs_tile(
     m: CycleAwareCircuit,
     domain: CycleAwareDomain,
     *,
@@ -87,7 +86,6 @@ def build_xs_tile(
     _in = inputs or {}
     _out: dict[str, CycleAwareSignal] = {}
 
-
     ZERO_1 = cas(domain, m.const(0, width=1), cycle=0)
     ONE_1 = cas(domain, m.const(1, width=1), cycle=0)
 
@@ -96,102 +94,182 @@ def build_xs_tile(
     # ================================================================
 
     # Hart ID (static config)
-    hart_id = (_in["hart_id"] if "hart_id" in _in else
-        cas(domain, m.input(f"{prefix}_hart_id", width=hart_id_w), cycle=0))
+    hart_id = (
+        _in["hart_id"]
+        if "hart_id" in _in
+        else cas(domain, m.input(f"{prefix}_hart_id", width=hart_id_w), cycle=0)
+    )
 
     # Interrupts → routed to core
-    meip = (_in["meip"] if "meip" in _in else
-        cas(domain, m.input(f"{prefix}_meip", width=1), cycle=0))
-    seip = (_in["seip"] if "seip" in _in else
-        cas(domain, m.input(f"{prefix}_seip", width=1), cycle=0))
-    mtip = (_in["mtip"] if "mtip" in _in else
-        cas(domain, m.input(f"{prefix}_mtip", width=1), cycle=0))
-    msip = (_in["msip"] if "msip" in _in else
-        cas(domain, m.input(f"{prefix}_msip", width=1), cycle=0))
-    debug_intr = (_in["debug_interrupt"] if "debug_interrupt" in _in else
-        cas(domain, m.input(f"{prefix}_debug_interrupt", width=1), cycle=0))
+    meip = (
+        _in["meip"]
+        if "meip" in _in
+        else cas(domain, m.input(f"{prefix}_meip", width=1), cycle=0)
+    )
+    seip = (
+        _in["seip"]
+        if "seip" in _in
+        else cas(domain, m.input(f"{prefix}_seip", width=1), cycle=0)
+    )
+    mtip = (
+        _in["mtip"]
+        if "mtip" in _in
+        else cas(domain, m.input(f"{prefix}_mtip", width=1), cycle=0)
+    )
+    msip = (
+        _in["msip"]
+        if "msip" in _in
+        else cas(domain, m.input(f"{prefix}_msip", width=1), cycle=0)
+    )
+    debug_intr = (
+        _in["debug_interrupt"]
+        if "debug_interrupt" in _in
+        else cas(domain, m.input(f"{prefix}_debug_interrupt", width=1), cycle=0)
+    )
 
     # Downstream from L3/memory → L2 refill
-    ds_resp_valid = (_in["ds_resp_valid"] if "ds_resp_valid" in _in else
-        cas(domain, m.input(f"{prefix}_ds_resp_valid", width=1), cycle=0))
-    ds_resp_data = (_in["ds_resp_data"] if "ds_resp_data" in _in else
-        cas(domain, m.input(f"{prefix}_ds_resp_data", width=block_bits), cycle=0))
-    ds_resp_source = (_in["ds_resp_source"] if "ds_resp_source" in _in else
-        cas(domain, m.input(f"{prefix}_ds_resp_source", width=1), cycle=0))
+    ds_resp_valid = (
+        _in["ds_resp_valid"]
+        if "ds_resp_valid" in _in
+        else cas(domain, m.input(f"{prefix}_ds_resp_valid", width=1), cycle=0)
+    )
+    ds_resp_data = (
+        _in["ds_resp_data"]
+        if "ds_resp_data" in _in
+        else cas(domain, m.input(f"{prefix}_ds_resp_data", width=block_bits), cycle=0)
+    )
+    ds_resp_source = (
+        _in["ds_resp_source"]
+        if "ds_resp_source" in _in
+        else cas(domain, m.input(f"{prefix}_ds_resp_source", width=1), cycle=0)
+    )
 
     # Writeback ports (from execution units, pass-through to core)
-    wb_valid = [cas(domain, m.input(f"{prefix}_wb_valid_{i}", width=1), cycle=0)
-                for i in range(num_wb)]
-    wb_data = [cas(domain, m.input(f"{prefix}_wb_data_{i}", width=data_width), cycle=0)
-               for i in range(num_wb)]
-    wb_rob_idx = [cas(domain, m.input(f"{prefix}_wb_rob_idx_{i}", width=rob_idx_w), cycle=0)
-                  for i in range(num_wb)]
+    [
+        cas(domain, m.input(f"{prefix}_wb_valid_{i}", width=1), cycle=0)
+        for i in range(num_wb)
+    ]
+    [
+        cas(domain, m.input(f"{prefix}_wb_data_{i}", width=data_width), cycle=0)
+        for i in range(num_wb)
+    ]
+    [
+        cas(domain, m.input(f"{prefix}_wb_rob_idx_{i}", width=rob_idx_w), cycle=0)
+        for i in range(num_wb)
+    ]
 
     # Branch / exception redirect
-    bru_redirect_valid = (_in["bru_redirect_valid"] if "bru_redirect_valid" in _in else
-        cas(domain, m.input(f"{prefix}_bru_redirect_valid", width=1), cycle=0))
-    bru_redirect_target = (_in["bru_redirect_target"] if "bru_redirect_target" in _in else
-        cas(domain, m.input(f"{prefix}_bru_redirect_target", width=pc_width), cycle=0))
-    rob_exception_valid = (_in["rob_exception_valid"] if "rob_exception_valid" in _in else
-        cas(domain, m.input(f"{prefix}_rob_exception_valid", width=1), cycle=0))
-    rob_exception_pc = (_in["rob_exception_pc"] if "rob_exception_pc" in _in else
-        cas(domain, m.input(f"{prefix}_rob_exception_pc", width=pc_width), cycle=0))
+    bru_redirect_valid = (
+        _in["bru_redirect_valid"]
+        if "bru_redirect_valid" in _in
+        else cas(domain, m.input(f"{prefix}_bru_redirect_valid", width=1), cycle=0)
+    )
+    bru_redirect_target = (
+        _in["bru_redirect_target"]
+        if "bru_redirect_target" in _in
+        else cas(
+            domain, m.input(f"{prefix}_bru_redirect_target", width=pc_width), cycle=0
+        )
+    )
+    rob_exception_valid = (
+        _in["rob_exception_valid"]
+        if "rob_exception_valid" in _in
+        else cas(domain, m.input(f"{prefix}_rob_exception_valid", width=1), cycle=0)
+    )
+    rob_exception_pc = (
+        _in["rob_exception_pc"]
+        if "rob_exception_pc" in _in
+        else cas(domain, m.input(f"{prefix}_rob_exception_pc", width=pc_width), cycle=0)
+    )
 
     # Issue queue backpressure
-    iq_int_ready = (_in["iq_int_ready"] if "iq_int_ready" in _in else
-        cas(domain, m.input(f"{prefix}_iq_int_ready", width=1), cycle=0))
-    iq_fp_ready = (_in["iq_fp_ready"] if "iq_fp_ready" in _in else
-        cas(domain, m.input(f"{prefix}_iq_fp_ready", width=1), cycle=0))
-    iq_mem_ready = (_in["iq_mem_ready"] if "iq_mem_ready" in _in else
-        cas(domain, m.input(f"{prefix}_iq_mem_ready", width=1), cycle=0))
+    (
+        _in["iq_int_ready"]
+        if "iq_int_ready" in _in
+        else cas(domain, m.input(f"{prefix}_iq_int_ready", width=1), cycle=0)
+    )
+    (
+        _in["iq_fp_ready"]
+        if "iq_fp_ready" in _in
+        else cas(domain, m.input(f"{prefix}_iq_fp_ready", width=1), cycle=0)
+    )
+    (
+        _in["iq_mem_ready"]
+        if "iq_mem_ready" in _in
+        else cas(domain, m.input(f"{prefix}_iq_mem_ready", width=1), cycle=0)
+    )
 
     # Load/store writeback from MemBlock
-    ld_wb_valid = [cas(domain, m.input(f"{prefix}_ld{i}_wb_valid", width=1), cycle=0)
-                   for i in range(num_load)]
-    ld_wb_data = [cas(domain, m.input(f"{prefix}_ld{i}_wb_data", width=data_width), cycle=0)
-                  for i in range(num_load)]
-    ld_wb_rob_idx = [cas(domain, m.input(f"{prefix}_ld{i}_wb_rob_idx", width=rob_idx_w), cycle=0)
-                     for i in range(num_load)]
-    st_wb_valid = [cas(domain, m.input(f"{prefix}_st{i}_wb_valid", width=1), cycle=0)
-                   for i in range(num_store)]
-    st_wb_rob_idx = [cas(domain, m.input(f"{prefix}_st{i}_wb_rob_idx", width=rob_idx_w), cycle=0)
-                     for i in range(num_store)]
+    ld_wb_valid = [
+        cas(domain, m.input(f"{prefix}_ld{i}_wb_valid", width=1), cycle=0)
+        for i in range(num_load)
+    ]
+    ld_wb_data = [
+        cas(domain, m.input(f"{prefix}_ld{i}_wb_data", width=data_width), cycle=0)
+        for i in range(num_load)
+    ]
+    ld_wb_rob_idx = [
+        cas(domain, m.input(f"{prefix}_ld{i}_wb_rob_idx", width=rob_idx_w), cycle=0)
+        for i in range(num_load)
+    ]
+    st_wb_valid = [
+        cas(domain, m.input(f"{prefix}_st{i}_wb_valid", width=1), cycle=0)
+        for i in range(num_store)
+    ]
+    st_wb_rob_idx = [
+        cas(domain, m.input(f"{prefix}_st{i}_wb_rob_idx", width=rob_idx_w), cycle=0)
+        for i in range(num_store)
+    ]
 
     # DCache miss from MemBlock
-    dcache_miss_valid = (_in["dcache_miss_valid"] if "dcache_miss_valid" in _in else
-        cas(domain, m.input(f"{prefix}_dcache_miss_valid", width=1), cycle=0))
-    dcache_miss_addr = (_in["dcache_miss_addr"] if "dcache_miss_addr" in _in else
-        cas(domain, m.input(f"{prefix}_dcache_miss_addr", width=pc_width), cycle=0))
+    dcache_miss_valid = (
+        _in["dcache_miss_valid"]
+        if "dcache_miss_valid" in _in
+        else cas(domain, m.input(f"{prefix}_dcache_miss_valid", width=1), cycle=0)
+    )
+    dcache_miss_addr = (
+        _in["dcache_miss_addr"]
+        if "dcache_miss_addr" in _in
+        else cas(domain, m.input(f"{prefix}_dcache_miss_addr", width=pc_width), cycle=0)
+    )
 
     # ── Sub-module calls ──
-    domain.push()
-    core_out = build_xs_core(m, domain, prefix=f"{prefix}_s_core",
-                             decode_width=decode_width, commit_width=commit_width,
-                             num_wb=num_wb, num_load=num_load, num_store=num_store,
-                             data_width=data_width, pc_width=pc_width,
-                             ptag_w=ptag_w, rob_idx_w=rob_idx_w,
-                             inputs={})
-    domain.pop()
+    domain.call(
+        xs_core,
+        inputs={},
+        prefix=f"{prefix}_s_core",
+        decode_width=decode_width,
+        commit_width=commit_width,
+        num_wb=num_wb,
+        num_load=num_load,
+        num_store=num_store,
+        data_width=data_width,
+        pc_width=pc_width,
+        ptag_w=ptag_w,
+        rob_idx_w=rob_idx_w,
+    )
 
-    domain.push()
     _l2_idx_w = max(1, 6)
     _l2_tag_w = max(1, pc_width - _l2_idx_w - 6)
-    l2_out = build_l2_top(m, domain, prefix=f"{prefix}_s_l2",
-                          addr_width=pc_width, data_width=data_width,
-                          tag_w=_l2_tag_w, idx_w=_l2_idx_w,
-                          inputs={})
-    domain.pop()
+    domain.call(
+        l2_top,
+        inputs={},
+        prefix=f"{prefix}_s_l2",
+        addr_width=pc_width,
+        data_width=data_width,
+        tag_w=_l2_tag_w,
+        idx_w=_l2_idx_w,
+    )
 
     # ================================================================
     # XSCore logic (simplified inline)
     # ================================================================
 
     # Frontend fetch PC state
-    fetch_pc_r = domain.state(width=pc_width, reset_value=0, name=f"{prefix}_xt_fetch_pc")
-    bpu_valid_r = domain.state(width=1, reset_value=0, name=f"{prefix}_xt_bpu_v")
-
-    fetch_pc = cas(domain, fetch_pc_r.wire, cycle=0)
-    bpu_valid = cas(domain, bpu_valid_r.wire, cycle=0)
+    fetch_pc = domain.signal(
+        width=pc_width, reset_value=0, name=f"{prefix}_xt_fetch_pc"
+    )
+    bpu_valid = domain.signal(width=1, reset_value=0, name=f"{prefix}_xt_bpu_v")
 
     # Redirect
     redirect_valid = bru_redirect_valid | rob_exception_valid
@@ -200,12 +278,12 @@ def build_xs_tile(
 
     # L2 → Core refill: select based on ds_resp_source
     ic_refill_valid = ds_resp_valid & (~ds_resp_source)  # source 0 = IC
-    dc_refill_valid = ds_resp_valid & ds_resp_source      # source 1 = DC
+    dc_refill_valid = ds_resp_valid & ds_resp_source  # source 1 = DC
 
     # BPU fallthrough
     fallthrough_c = cas(domain, m.const(64, width=pc_width), cycle=0)
     bpu_pred_target = cas(
-        domain, (fetch_pc.wire + fallthrough_c.wire)[0:pc_width], cycle=0
+        domain, (wire_of(fetch_pc) + wire_of(fallthrough_c))[0:pc_width], cycle=0
     )
 
     ibuf_ready = ONE_1  # simplified
@@ -216,59 +294,67 @@ def build_xs_tile(
     next_pc = mux(redirect_valid, redirect_target, next_pc)
 
     # Pipeline: fetch → ICache → IFU → Decode (3 stages)
-    s1_v = domain.cycle(s0_fire.wire, name=f"{prefix}_xt_s1_v")
-    s1_pc = domain.cycle(fetch_pc.wire, name=f"{prefix}_xt_s1_pc")
+    s1_v = domain.cycle(wire_of(s0_fire), name=f"{prefix}_xt_s1_v")
+    s1_pc = domain.cycle(wire_of(fetch_pc), name=f"{prefix}_xt_s1_pc")
 
     domain.next()
 
-    s1_alive = s1_v & (~redirect_valid.wire)
+    s1_alive = s1_v & (~wire_of(redirect_valid))
     # ICache hit when L2 IC refill is available
-    s1_resp = s1_alive & ic_refill_valid.wire
-    s1_miss = s1_alive & (~ic_refill_valid.wire)
+    s1_resp = s1_alive & wire_of(ic_refill_valid)
+    s1_miss = s1_alive & (~wire_of(ic_refill_valid))
 
     # Core → L2: ICache miss request
     core_ic_miss_valid = s1_miss
     core_ic_miss_addr = s1_pc
 
     # Core → L2: DCache miss request (pass-through from MemBlock)
-    core_dc_miss_valid = dcache_miss_valid.wire
-    core_dc_miss_addr = dcache_miss_addr.wire
+    core_dc_miss_valid = wire_of(dcache_miss_valid)
+    core_dc_miss_addr = wire_of(dcache_miss_addr)
 
     # L2 request queue: arbitrate IC > DC
     l2_enq_valid = core_ic_miss_valid | core_dc_miss_valid
-    l2_enq_addr = mux(core_ic_miss_valid,
-                      cas(domain, core_ic_miss_addr, cycle=0),
-                      cas(domain, core_dc_miss_addr, cycle=0))
+    l2_enq_addr = mux(
+        core_ic_miss_valid,
+        cas(domain, core_ic_miss_addr, cycle=0),
+        cas(domain, core_dc_miss_addr, cycle=0),
+    )
     l2_enq_source = mux(core_ic_miss_valid, ZERO_1, ONE_1)
 
     # L2 → downstream output
     m.output(f"{prefix}_ds_req_valid", l2_enq_valid)
     _out["ds_req_valid"] = cas(domain, l2_enq_valid, cycle=domain.cycle_index)
-    m.output(f"{prefix}_ds_req_addr", l2_enq_addr.wire)
+    m.output(f"{prefix}_ds_req_addr", wire_of(l2_enq_addr))
     _out["ds_req_addr"] = l2_enq_addr
-    m.output(f"{prefix}_ds_req_source", l2_enq_source.wire)
+    m.output(f"{prefix}_ds_req_source", wire_of(l2_enq_source))
     _out["ds_req_source"] = l2_enq_source
 
     s2_v = domain.cycle(s1_resp, name=f"{prefix}_xt_s2_v")
     s2_pc = domain.cycle(s1_pc, name=f"{prefix}_xt_s2_pc")
-    s2_data = domain.cycle(ds_resp_data.wire, name=f"{prefix}_xt_s2_data")
+    s2_data = domain.cycle(wire_of(ds_resp_data), name=f"{prefix}_xt_s2_data")
 
     domain.next()
 
-    s2_alive = s2_v & (~redirect_valid.wire)
+    s2_alive = s2_v & (~wire_of(redirect_valid))
 
     INST_WIDTH = 32
     s3_v = domain.cycle(s2_alive, name=f"{prefix}_xt_s3_v")
     s3_pc = domain.cycle(s2_pc, name=f"{prefix}_xt_s3_pc")
-    s3_insts = [domain.cycle(
-        s2_data[i * INST_WIDTH:(i + 1) * INST_WIDTH] if (i + 1) * INST_WIDTH <= block_bits
-        else m.const(0, width=INST_WIDTH),
-        name=f"{prefix}_xt_s3_i{i}")
-        for i in range(decode_width)]
+    s3_insts = [
+        domain.cycle(
+            (
+                s2_data[i * INST_WIDTH : (i + 1) * INST_WIDTH]
+                if (i + 1) * INST_WIDTH <= block_bits
+                else m.const(0, width=INST_WIDTH)
+            ),
+            name=f"{prefix}_xt_s3_i{i}",
+        )
+        for i in range(decode_width)
+    ]
 
     domain.next()
 
-    s3_alive = s3_v & (~redirect_valid.wire)
+    s3_alive = s3_v & (~wire_of(redirect_valid))
 
     # Decode outputs
     INST_BYTES = 2
@@ -282,32 +368,34 @@ def build_xs_tile(
     # Outputs
     # ================================================================
 
-    m.output(f"{prefix}_redirect_valid", redirect_valid.wire)
+    m.output(f"{prefix}_redirect_valid", wire_of(redirect_valid))
     _out["redirect_valid"] = redirect_valid
-    m.output(f"{prefix}_redirect_target", redirect_target.wire)
+    m.output(f"{prefix}_redirect_target", wire_of(redirect_target))
     _out["redirect_target"] = redirect_target
 
-    m.output(f"{prefix}_hart_id_out", hart_id.wire)
+    m.output(f"{prefix}_hart_id_out", wire_of(hart_id))
     _out["hart_id_out"] = hart_id
-    m.output(f"{prefix}_interrupt_pending", (meip | seip | mtip | msip | debug_intr).wire)
+    m.output(
+        f"{prefix}_interrupt_pending", wire_of(meip | seip | mtip | msip | debug_intr)
+    )
 
     # Forward load/store writeback
     for i in range(num_load):
-        m.output(f"{prefix}_ld{i}_wb_valid_out", ld_wb_valid[i].wire)
-        m.output(f"{prefix}_ld{i}_wb_data_out", ld_wb_data[i].wire)
-        m.output(f"{prefix}_ld{i}_wb_rob_idx_out", ld_wb_rob_idx[i].wire)
+        m.output(f"{prefix}_ld{i}_wb_valid_out", wire_of(ld_wb_valid[i]))
+        m.output(f"{prefix}_ld{i}_wb_data_out", wire_of(ld_wb_data[i]))
+        m.output(f"{prefix}_ld{i}_wb_rob_idx_out", wire_of(ld_wb_rob_idx[i]))
     for i in range(num_store):
-        m.output(f"{prefix}_st{i}_wb_valid_out", st_wb_valid[i].wire)
-        m.output(f"{prefix}_st{i}_wb_rob_idx_out", st_wb_rob_idx[i].wire)
+        m.output(f"{prefix}_st{i}_wb_valid_out", wire_of(st_wb_valid[i]))
+        m.output(f"{prefix}_st{i}_wb_rob_idx_out", wire_of(st_wb_rob_idx[i]))
 
     # DC refill to MemBlock
-    m.output(f"{prefix}_dc_refill_valid", dc_refill_valid.wire)
+    m.output(f"{prefix}_dc_refill_valid", wire_of(dc_refill_valid))
     _out["dc_refill_valid"] = dc_refill_valid
-    m.output(f"{prefix}_dc_refill_data", ds_resp_data.wire)
+    m.output(f"{prefix}_dc_refill_data", wire_of(ds_resp_data))
     _out["dc_refill_data"] = ds_resp_data
 
     # Debug
-    m.output(f"{prefix}_debug_pc", fetch_pc.wire)
+    m.output(f"{prefix}_debug_pc", wire_of(fetch_pc))
     _out["debug_pc"] = fetch_pc
 
     # ================================================================
@@ -316,20 +404,13 @@ def build_xs_tile(
 
     domain.next()
 
-    bpu_valid_r.set(ONE_1)
-    fetch_pc_r.set(next_pc)
+    bpu_valid <<= ONE_1
+    fetch_pc <<= next_pc
     return _out
 
 
-build_xs_tile.__pycircuit_name__ = "xs_tile"
+xs_tile.__pycircuit_name__ = "xs_tile"
 
 
 if __name__ == "__main__":
-    print(compile_cycle_aware(
-        build_xs_tile, name="xs_tile", eager=True,
-        decode_width=2, commit_width=2, num_wb=2,
-        num_load=1, num_store=1,
-        data_width=16, pc_width=16,
-        ptag_w=4, rob_idx_w=4, fu_type_w=3,
-        block_bits=128, hart_id_w=4,
-    ).emit_mlir())
+    pass

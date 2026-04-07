@@ -17,6 +17,7 @@ Key features:
   B-MUL-002  64-bit operands, 128-bit intermediate
   B-MUL-003  4 multiply variants (MUL, MULH, MULHU, MULHSU)
 """
+
 from __future__ import annotations
 
 import sys
@@ -31,22 +32,21 @@ from pycircuit import (
     CycleAwareDomain,
     CycleAwareSignal,
     cas,
-    compile_cycle_aware,
     mux,
     u,
+    wire_of,
 )
-
 from top.parameters import XLEN
 
 MUL_OP_WIDTH = 2
 
-OP_MUL    = 0b00
-OP_MULH   = 0b01
-OP_MULHU  = 0b10
+OP_MUL = 0b00
+OP_MULH = 0b01
+OP_MULHU = 0b10
 OP_MULHSU = 0b11
 
 
-def build_mul(
+def mul(
     m: CycleAwareCircuit,
     domain: CycleAwareDomain,
     *,
@@ -58,19 +58,30 @@ def build_mul(
     _in = inputs or {}
     _out: dict[str, CycleAwareSignal] = {}
 
-
     op_w = MUL_OP_WIDTH
     double_w = data_width * 2
 
     # ── Cycle 0: Inputs & multiply ───────────────────────────────
-    in_valid = (_in["in_valid"] if "in_valid" in _in else
-        cas(domain, m.input(f"{prefix}_in_valid", width=1), cycle=0))
-    src1 = (_in["src1"] if "src1" in _in else
-        cas(domain, m.input(f"{prefix}_src1", width=data_width), cycle=0))
-    src2 = (_in["src2"] if "src2" in _in else
-        cas(domain, m.input(f"{prefix}_src2", width=data_width), cycle=0))
-    mul_op = (_in["mul_op"] if "mul_op" in _in else
-        cas(domain, m.input(f"{prefix}_mul_op", width=op_w), cycle=0))
+    in_valid = (
+        _in["in_valid"]
+        if "in_valid" in _in
+        else cas(domain, m.input(f"{prefix}_in_valid", width=1), cycle=0)
+    )
+    src1 = (
+        _in["src1"]
+        if "src1" in _in
+        else cas(domain, m.input(f"{prefix}_src1", width=data_width), cycle=0)
+    )
+    src2 = (
+        _in["src2"]
+        if "src2" in _in
+        else cas(domain, m.input(f"{prefix}_src2", width=data_width), cycle=0)
+    )
+    mul_op = (
+        _in["mul_op"]
+        if "mul_op" in _in
+        else cas(domain, m.input(f"{prefix}_mul_op", width=op_w), cycle=0)
+    )
 
     def _const(val, w=data_width):
         return cas(domain, m.const(val, width=w), cycle=0)
@@ -82,22 +93,24 @@ def build_mul(
     # For MUL (lower half), signed and unsigned produce identical lower bits.
     # For MULH/MULHU/MULHSU we use the unsigned product as a simplified model;
     # a full implementation would add sign-correction terms.
-    src1_wide = cas(domain, (src1.wire + u(double_w, 0))[0:double_w], cycle=0)
-    src2_wide = cas(domain, (src2.wire + u(double_w, 0))[0:double_w], cycle=0)
-    prod_uu = cas(domain, (src1_wide.wire * src2_wide.wire)[0:double_w], cycle=0)
+    src1_wide = cas(domain, (wire_of(src1) + u(double_w, 0))[0:double_w], cycle=0)
+    src2_wide = cas(domain, (wire_of(src2) + u(double_w, 0))[0:double_w], cycle=0)
+    prod_uu = cas(
+        domain, (wire_of(src1_wide) * wire_of(src2_wide))[0:double_w], cycle=0
+    )
 
     prod_lo = prod_uu[0:data_width]
     prod_hi = prod_uu[data_width:double_w]
 
     # Result selection
     result_c0 = prod_lo  # default: MUL (lower half)
-    result_c0 = mux(mul_op == _op(OP_MULH),   prod_hi, result_c0)
-    result_c0 = mux(mul_op == _op(OP_MULHU),  prod_hi, result_c0)
+    result_c0 = mux(mul_op == _op(OP_MULH), prod_hi, result_c0)
+    result_c0 = mux(mul_op == _op(OP_MULHU), prod_hi, result_c0)
     result_c0 = mux(mul_op == _op(OP_MULHSU), prod_hi, result_c0)
 
     # ── Pipeline register: cycle 0 → cycle 1 ────────────────────
-    out_valid_w = domain.cycle(in_valid.wire, name=f"{prefix}_mul_out_v")
-    out_result_w = domain.cycle(result_c0.wire, name=f"{prefix}_mul_out_r")
+    out_valid_w = domain.cycle(wire_of(in_valid), name=f"{prefix}_mul_out_v")
+    out_result_w = domain.cycle(wire_of(result_c0), name=f"{prefix}_mul_out_r")
 
     domain.next()
 
@@ -109,11 +122,8 @@ def build_mul(
     return _out
 
 
-build_mul.__pycircuit_name__ = "mul"
+mul.__pycircuit_name__ = "mul"
 
 
 if __name__ == "__main__":
-    print(compile_cycle_aware(
-        build_mul, name="mul", eager=True,
-        data_width=16,
-    ).emit_mlir())
+    pass

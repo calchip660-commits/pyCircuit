@@ -8,4 +8,3 @@ TB_PRESETS = {
 }
 
 SIM_TIER = "normal"
-

@@ -1,8 +1,4 @@
-from . import ct
-from . import hierarchical
-from . import logic
-from . import spec
-from . import wiring
+from . import ct, hierarchical, lib, logic, spec, wiring
 from .connectors import (
     Connector,
     ConnectorBundle,
@@ -12,15 +8,36 @@ from .connectors import (
     RegConnector,
     WireConnector,
 )
-from .design import const, function, module, probe as _probe_decorator, testbench as _testbench_decorator
+from .design import (
+    const,
+    function,
+    module,
+)
+from .design import (
+    probe as _probe_decorator,
+)
+from .design import (
+    testbench as _testbench_decorator,
+)
 from .hw import Bundle, Circuit, ClockDomain, Pop, Reg, Vec, Wire, cat, unsigned
 from .jit import JitError, compile
 from .literals import LiteralValue, S, U, s, u
+from .probe import (
+    ProbeBuilder,
+    ProbeError,
+    ProbeRef,
+    ProbeView,
+    TbProbeHandle,
+    TbProbes,
+)
+from .tb import Tb, sva
+from .testbench import TestbenchProgram
 from .v5 import (
     CycleAwareCircuit,
     CycleAwareDomain,
     CycleAwareSignal,
     CycleAwareTb,
+    ForwardSignal,
     StateSignal,
     cas,
     compile_cycle_aware,
@@ -31,11 +48,9 @@ from .v5 import (
     pyc_ClockDomain,
     pyc_Signal,
     signal,
+    submodule_input,
+    wire_of,
 )
-from . import lib
-from .probe import ProbeBuilder, ProbeError, ProbeRef, ProbeView, TbProbeHandle, TbProbes
-from .tb import Tb, sva
-from .testbench import TestbenchProgram
 
 testbench = _testbench_decorator
 probe = _probe_decorator
@@ -45,6 +60,8 @@ __all__ = [
     "CycleAwareDomain",
     "CycleAwareSignal",
     "CycleAwareTb",
+    "ForwardSignal",
+    "StateSignal",
     "cas",
     "compile_cycle_aware",
     "log",
@@ -54,6 +71,8 @@ __all__ = [
     "pyc_ClockDomain",
     "pyc_Signal",
     "signal",
+    "submodule_input",
+    "wire_of",
     "Connector",
     "ConnectorBundle",
     "ConnectorStruct",

@@ -6,19 +6,19 @@ from pycircuit import (
     ProbeBuilder,
     ProbeView,
     cas,
-    compile_cycle_aware,
     probe,
+    wire_of,
 )
 
 
 def build(m: CycleAwareCircuit, domain: CycleAwareDomain, width: int = 8) -> None:
     in_a = cas(domain, m.input("in_a", width=width), cycle=0)
 
-    q = domain.state(width=width, reset_value=0, name="q")
-    m.output("y", q.wire)
+    q = domain.signal(width=width, reset_value=0, name="q")
+    m.output("y", wire_of(q))
 
     domain.next()
-    q.set(in_a)
+    q <<= in_a
 
 
 build.__pycircuit_name__ = "xz_value_model_smoke"
@@ -37,4 +37,4 @@ def value_probe(p: ProbeBuilder, dut: ProbeView, width: int = 8) -> None:
 
 
 if __name__ == "__main__":
-    print(compile_cycle_aware(build, name="xz_value_model_smoke", eager=True, width=8).emit_mlir())
+    pass

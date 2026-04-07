@@ -23,7 +23,7 @@ from pycircuit import (
 )
 ```
 
-See `docs/PyCurcit V5_CYCLE_AWARE_API.md`.
+See `docs/PyCircuit_V5_Spec.md`.
 
 ## Key decorators
 
@@ -39,4 +39,3 @@ See `docs/PyCurcit V5_CYCLE_AWARE_API.md`.
 - IR: `docs/IR_SPEC.md`
 - Primitives: `docs/PRIMITIVES.md`
 - Diagnostics: `docs/DIAGNOSTICS.md`
-

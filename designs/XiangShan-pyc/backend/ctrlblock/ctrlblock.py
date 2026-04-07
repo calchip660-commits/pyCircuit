@@ -18,6 +18,7 @@ Key features:
   B-CB-004  Commit output: ROB retire signals for freelist / arch state update
   B-CB-005  Flush: cancel all in-flight work on exception / redirect
 """
+
 from __future__ import annotations
 
 import sys
@@ -32,26 +33,23 @@ from pycircuit import (
     CycleAwareDomain,
     CycleAwareSignal,
     cas,
-    compile_cycle_aware,
     mux,
-    u,
+    wire_of,
 )
-
 from top.parameters import (
     COMMIT_WIDTH,
     DECODE_WIDTH,
     PC_WIDTH,
     PTAG_WIDTH_INT,
-    RENAME_WIDTH,
     ROB_IDX_WIDTH,
 )
 
-from backend.rename.rename import build_rename
-from backend.dispatch.dispatch import build_dispatch
-from backend.rob.rob import build_rob
+from backend.dispatch.dispatch import dispatch
+from backend.rename.rename import rename
+from backend.rob.rob import rob
 
 
-def build_ctrlblock(
+def ctrlblock(
     m: CycleAwareCircuit,
     domain: CycleAwareDomain,
     *,
@@ -68,86 +66,149 @@ def build_ctrlblock(
     _out: dict[str, CycleAwareSignal] = {}
 
     # ── Sub-module calls ──
-    domain.push()
-    ren_out = build_rename(m, domain, prefix=f"{prefix}_s_ren",
-                           rename_width=decode_width, commit_width=commit_width,
-                           inputs={"flush": (_in["flush"] if "flush" in _in else
-                                   cas(domain, m.const(0, width=1), cycle=0))})
-    domain.pop()
+    domain.call(
+        rename,
+        inputs={
+            "flush": (
+                _in["flush"]
+                if "flush" in _in
+                else cas(domain, m.const(0, width=1), cycle=0)
+            )
+        },
+        prefix=f"{prefix}_s_ren",
+        rename_width=decode_width,
+        commit_width=commit_width,
+    )
 
-    domain.push()
-    dp_out = build_dispatch(m, domain, prefix=f"{prefix}_s_dp",
-                            dispatch_width=decode_width, ptag_w=ptag_w,
-                            pc_width=pc_width, rob_idx_w=rob_idx_w,
-                            inputs={})
-    domain.pop()
+    domain.call(
+        dispatch,
+        inputs={},
+        prefix=f"{prefix}_s_dp",
+        dispatch_width=decode_width,
+        ptag_w=ptag_w,
+        pc_width=pc_width,
+        rob_idx_w=rob_idx_w,
+    )
 
-    domain.push()
-    rob_out = build_rob(m, domain, prefix=f"{prefix}_s_rob",
-                        rename_width=decode_width, commit_width=commit_width,
-                        ptag_w=ptag_w, pc_width=pc_width,
-                        inputs={})
-    domain.pop()
-
+    domain.call(
+        rob,
+        inputs={},
+        prefix=f"{prefix}_s_rob",
+        rename_width=decode_width,
+        commit_width=commit_width,
+        ptag_w=ptag_w,
+        pc_width=pc_width,
+    )
 
     # ================================================================
     # Cycle 0 — Inputs
     # ================================================================
 
     # Decoded uops from frontend
-    in_valid = [cas(domain, m.input(f"{prefix}_in_valid_{i}", width=1), cycle=0)
-                for i in range(decode_width)]
-    in_pc = [cas(domain, m.input(f"{prefix}_in_pc_{i}", width=pc_width), cycle=0)
-             for i in range(decode_width)]
-    in_pdest = [cas(domain, m.input(f"{prefix}_in_pdest_{i}", width=ptag_w), cycle=0)
-                for i in range(decode_width)]
-    in_psrc1 = [cas(domain, m.input(f"{prefix}_in_psrc1_{i}", width=ptag_w), cycle=0)
-                for i in range(decode_width)]
-    in_psrc2 = [cas(domain, m.input(f"{prefix}_in_psrc2_{i}", width=ptag_w), cycle=0)
-                for i in range(decode_width)]
-    in_old_pdest = [cas(domain, m.input(f"{prefix}_in_old_pdest_{i}", width=ptag_w), cycle=0)
-                    for i in range(decode_width)]
-    in_rob_idx = [cas(domain, m.input(f"{prefix}_in_rob_idx_{i}", width=rob_idx_w), cycle=0)
-                  for i in range(decode_width)]
+    in_valid = [
+        cas(domain, m.input(f"{prefix}_in_valid_{i}", width=1), cycle=0)
+        for i in range(decode_width)
+    ]
+    in_pc = [
+        cas(domain, m.input(f"{prefix}_in_pc_{i}", width=pc_width), cycle=0)
+        for i in range(decode_width)
+    ]
+    in_pdest = [
+        cas(domain, m.input(f"{prefix}_in_pdest_{i}", width=ptag_w), cycle=0)
+        for i in range(decode_width)
+    ]
+    in_psrc1 = [
+        cas(domain, m.input(f"{prefix}_in_psrc1_{i}", width=ptag_w), cycle=0)
+        for i in range(decode_width)
+    ]
+    in_psrc2 = [
+        cas(domain, m.input(f"{prefix}_in_psrc2_{i}", width=ptag_w), cycle=0)
+        for i in range(decode_width)
+    ]
+    in_old_pdest = [
+        cas(domain, m.input(f"{prefix}_in_old_pdest_{i}", width=ptag_w), cycle=0)
+        for i in range(decode_width)
+    ]
+    in_rob_idx = [
+        cas(domain, m.input(f"{prefix}_in_rob_idx_{i}", width=rob_idx_w), cycle=0)
+        for i in range(decode_width)
+    ]
 
     # Backpressure from downstream (IQ full, ROB full)
-    dispatch_stall = (_in["dispatch_stall"] if "dispatch_stall" in _in else
-        cas(domain, m.input(f"{prefix}_dispatch_stall", width=1), cycle=0))
-    rob_full = (_in["rob_full"] if "rob_full" in _in else
-        cas(domain, m.input(f"{prefix}_rob_full", width=1), cycle=0))
+    dispatch_stall = (
+        _in["dispatch_stall"]
+        if "dispatch_stall" in _in
+        else cas(domain, m.input(f"{prefix}_dispatch_stall", width=1), cycle=0)
+    )
+    rob_full = (
+        _in["rob_full"]
+        if "rob_full" in _in
+        else cas(domain, m.input(f"{prefix}_rob_full", width=1), cycle=0)
+    )
 
     # Branch misprediction from execution
-    bru_redirect_valid = (_in["bru_redirect_valid"] if "bru_redirect_valid" in _in else
-        cas(domain, m.input(f"{prefix}_bru_redirect_valid", width=1), cycle=0))
-    bru_redirect_target = (_in["bru_redirect_target"] if "bru_redirect_target" in _in else
-        cas(domain, m.input(f"{prefix}_bru_redirect_target", width=pc_width), cycle=0))
-    bru_redirect_rob_idx = (_in["bru_redirect_rob_idx"] if "bru_redirect_rob_idx" in _in else
-        cas(domain, m.input(f"{prefix}_bru_redirect_rob_idx", width=rob_idx_w), cycle=0))
+    bru_redirect_valid = (
+        _in["bru_redirect_valid"]
+        if "bru_redirect_valid" in _in
+        else cas(domain, m.input(f"{prefix}_bru_redirect_valid", width=1), cycle=0)
+    )
+    bru_redirect_target = (
+        _in["bru_redirect_target"]
+        if "bru_redirect_target" in _in
+        else cas(
+            domain, m.input(f"{prefix}_bru_redirect_target", width=pc_width), cycle=0
+        )
+    )
+    (
+        _in["bru_redirect_rob_idx"]
+        if "bru_redirect_rob_idx" in _in
+        else cas(
+            domain, m.input(f"{prefix}_bru_redirect_rob_idx", width=rob_idx_w), cycle=0
+        )
+    )
 
     # ROB exception
-    rob_exception_valid = (_in["rob_exception_valid"] if "rob_exception_valid" in _in else
-        cas(domain, m.input(f"{prefix}_rob_exception_valid", width=1), cycle=0))
-    rob_exception_pc = (_in["rob_exception_pc"] if "rob_exception_pc" in _in else
-        cas(domain, m.input(f"{prefix}_rob_exception_pc", width=pc_width), cycle=0))
+    rob_exception_valid = (
+        _in["rob_exception_valid"]
+        if "rob_exception_valid" in _in
+        else cas(domain, m.input(f"{prefix}_rob_exception_valid", width=1), cycle=0)
+    )
+    rob_exception_pc = (
+        _in["rob_exception_pc"]
+        if "rob_exception_pc" in _in
+        else cas(domain, m.input(f"{prefix}_rob_exception_pc", width=pc_width), cycle=0)
+    )
 
     # ROB commit signals
-    rob_commit_valid = [cas(domain, m.input(f"{prefix}_rob_commit_valid_{i}", width=1), cycle=0)
-                        for i in range(commit_width)]
-    rob_commit_pdest = [cas(domain, m.input(f"{prefix}_rob_commit_pdest_{i}", width=ptag_w), cycle=0)
-                        for i in range(commit_width)]
-    rob_commit_old_pdest = [cas(domain, m.input(f"{prefix}_rob_commit_old_pdest_{i}", width=ptag_w), cycle=0)
-                            for i in range(commit_width)]
+    rob_commit_valid = [
+        cas(domain, m.input(f"{prefix}_rob_commit_valid_{i}", width=1), cycle=0)
+        for i in range(commit_width)
+    ]
+    rob_commit_pdest = [
+        cas(domain, m.input(f"{prefix}_rob_commit_pdest_{i}", width=ptag_w), cycle=0)
+        for i in range(commit_width)
+    ]
+    rob_commit_old_pdest = [
+        cas(
+            domain, m.input(f"{prefix}_rob_commit_old_pdest_{i}", width=ptag_w), cycle=0
+        )
+        for i in range(commit_width)
+    ]
 
     # Writeback from execution units
-    wb_valid = [cas(domain, m.input(f"{prefix}_wb_valid_{i}", width=1), cycle=0)
-                for i in range(2)]
-    wb_rob_idx = [cas(domain, m.input(f"{prefix}_wb_rob_idx_{i}", width=rob_idx_w), cycle=0)
-                  for i in range(2)]
+    wb_valid = [
+        cas(domain, m.input(f"{prefix}_wb_valid_{i}", width=1), cycle=0)
+        for i in range(2)
+    ]
+    wb_rob_idx = [
+        cas(domain, m.input(f"{prefix}_wb_rob_idx_{i}", width=rob_idx_w), cycle=0)
+        for i in range(2)
+    ]
 
     # ── Constants ────────────────────────────────────────────────
-    ZERO_1 = cas(domain, m.const(0, width=1), cycle=0)
-    ONE_1 = cas(domain, m.const(1, width=1), cycle=0)
-    ZERO_PC = cas(domain, m.const(0, width=pc_width), cycle=0)
+    cas(domain, m.const(0, width=1), cycle=0)
+    cas(domain, m.const(1, width=1), cycle=0)
+    cas(domain, m.const(0, width=pc_width), cycle=0)
 
     # ================================================================
     # Redirect generation
@@ -157,11 +218,11 @@ def build_ctrlblock(
     redirect_target = mux(rob_exception_valid, rob_exception_pc, bru_redirect_target)
     redirect_flush = rob_exception_valid
 
-    m.output(f"{prefix}_redirect_valid", redirect_valid.wire)
+    m.output(f"{prefix}_redirect_valid", wire_of(redirect_valid))
     _out["redirect_valid"] = redirect_valid
-    m.output(f"{prefix}_redirect_target", redirect_target.wire)
+    m.output(f"{prefix}_redirect_target", wire_of(redirect_target))
     _out["redirect_target"] = redirect_target
-    m.output(f"{prefix}_redirect_flush", redirect_flush.wire)
+    m.output(f"{prefix}_redirect_flush", wire_of(redirect_flush))
     _out["redirect_flush"] = redirect_flush
 
     # ================================================================
@@ -170,7 +231,7 @@ def build_ctrlblock(
     # Stall if dispatch stalls, ROB is full, or redirect is active
     pipeline_stall = dispatch_stall | rob_full | redirect_valid
 
-    m.output(f"{prefix}_stall_to_frontend", pipeline_stall.wire)
+    m.output(f"{prefix}_stall_to_frontend", wire_of(pipeline_stall))
     _out["stall_to_frontend"] = pipeline_stall
 
     # ================================================================
@@ -179,39 +240,53 @@ def build_ctrlblock(
     for i in range(decode_width):
         slot_valid = in_valid[i] & (~pipeline_stall)
 
-        m.output(f"{prefix}_dp_valid_{i}", slot_valid.wire)
-        m.output(f"{prefix}_dp_pc_{i}", in_pc[i].wire)
-        m.output(f"{prefix}_dp_pdest_{i}", in_pdest[i].wire)
-        m.output(f"{prefix}_dp_psrc1_{i}", in_psrc1[i].wire)
-        m.output(f"{prefix}_dp_psrc2_{i}", in_psrc2[i].wire)
-        m.output(f"{prefix}_dp_old_pdest_{i}", in_old_pdest[i].wire)
-        m.output(f"{prefix}_dp_rob_idx_{i}", in_rob_idx[i].wire)
+        m.output(f"{prefix}_dp_valid_{i}", wire_of(slot_valid))
+        _out[f"dp_valid_{i}"] = slot_valid
+        m.output(f"{prefix}_dp_pc_{i}", wire_of(in_pc[i]))
+        _out[f"dp_pc_{i}"] = in_pc[i]
+        m.output(f"{prefix}_dp_pdest_{i}", wire_of(in_pdest[i]))
+        _out[f"dp_pdest_{i}"] = in_pdest[i]
+        m.output(f"{prefix}_dp_psrc1_{i}", wire_of(in_psrc1[i]))
+        _out[f"dp_psrc1_{i}"] = in_psrc1[i]
+        m.output(f"{prefix}_dp_psrc2_{i}", wire_of(in_psrc2[i]))
+        _out[f"dp_psrc2_{i}"] = in_psrc2[i]
+        m.output(f"{prefix}_dp_old_pdest_{i}", wire_of(in_old_pdest[i]))
+        _out[f"dp_old_pdest_{i}"] = in_old_pdest[i]
+        m.output(f"{prefix}_dp_rob_idx_{i}", wire_of(in_rob_idx[i]))
+        _out[f"dp_rob_idx_{i}"] = in_rob_idx[i]
 
     # ================================================================
     # Commit pass-through
     # ================================================================
     for i in range(commit_width):
-        m.output(f"{prefix}_commit_valid_{i}", rob_commit_valid[i].wire)
-        m.output(f"{prefix}_commit_pdest_{i}", rob_commit_pdest[i].wire)
-        m.output(f"{prefix}_commit_old_pdest_{i}", rob_commit_old_pdest[i].wire)
+        m.output(f"{prefix}_commit_valid_{i}", wire_of(rob_commit_valid[i]))
+        _out[f"commit_valid_{i}"] = rob_commit_valid[i]
+        m.output(f"{prefix}_commit_pdest_{i}", wire_of(rob_commit_pdest[i]))
+        _out[f"commit_pdest_{i}"] = rob_commit_pdest[i]
+        m.output(f"{prefix}_commit_old_pdest_{i}", wire_of(rob_commit_old_pdest[i]))
+        _out[f"commit_old_pdest_{i}"] = rob_commit_old_pdest[i]
 
     # Count committed uops
     cm_cnt_w = max(1, commit_width.bit_length())
     cm_cnt = cas(domain, m.const(0, width=cm_cnt_w), cycle=0)
     ONE_CM = cas(domain, m.const(1, width=cm_cnt_w), cycle=0)
     for i in range(commit_width):
-        cm_cnt = mux(rob_commit_valid[i],
-                     cas(domain, (cm_cnt.wire + ONE_CM.wire)[0:cm_cnt_w], cycle=0),
-                     cm_cnt)
-    m.output(f"{prefix}_commit_count", cm_cnt.wire)
+        cm_cnt = mux(
+            rob_commit_valid[i],
+            cas(domain, (wire_of(cm_cnt) + wire_of(ONE_CM))[0:cm_cnt_w], cycle=0),
+            cm_cnt,
+        )
+    m.output(f"{prefix}_commit_count", wire_of(cm_cnt))
     _out["commit_count"] = cm_cnt
 
     # ================================================================
     # Writeback forwarding
     # ================================================================
     for i in range(2):
-        m.output(f"{prefix}_wb_fwd_valid_{i}", wb_valid[i].wire)
-        m.output(f"{prefix}_wb_fwd_rob_idx_{i}", wb_rob_idx[i].wire)
+        m.output(f"{prefix}_wb_fwd_valid_{i}", wire_of(wb_valid[i]))
+        _out[f"wb_fwd_valid_{i}"] = wb_valid[i]
+        m.output(f"{prefix}_wb_fwd_rob_idx_{i}", wire_of(wb_rob_idx[i]))
+        _out[f"wb_fwd_rob_idx_{i}"] = wb_rob_idx[i]
 
     # ================================================================
     # Cycle 1: pipeline registers for timing closure
@@ -220,24 +295,20 @@ def build_ctrlblock(
 
     for i in range(decode_width):
         slot_valid = in_valid[i] & (~pipeline_stall)
-        domain.cycle(slot_valid.wire, name=f"{prefix}_cb_v_{i}")
-        domain.cycle(in_pc[i].wire, name=f"{prefix}_cb_pc_{i}")
-        domain.cycle(in_pdest[i].wire, name=f"{prefix}_cb_pdest_{i}")
-        domain.cycle(in_psrc1[i].wire, name=f"{prefix}_cb_psrc1_{i}")
-        domain.cycle(in_psrc2[i].wire, name=f"{prefix}_cb_psrc2_{i}")
+        domain.cycle(wire_of(slot_valid), name=f"{prefix}_cb_v_{i}")
+        domain.cycle(wire_of(in_pc[i]), name=f"{prefix}_cb_pc_{i}")
+        domain.cycle(wire_of(in_pdest[i]), name=f"{prefix}_cb_pdest_{i}")
+        domain.cycle(wire_of(in_psrc1[i]), name=f"{prefix}_cb_psrc1_{i}")
+        domain.cycle(wire_of(in_psrc2[i]), name=f"{prefix}_cb_psrc2_{i}")
 
     # Redirect pipeline register
-    domain.cycle(redirect_valid.wire, name=f"{prefix}_cb_redir_v")
-    domain.cycle(redirect_target.wire, name=f"{prefix}_cb_redir_tgt")
+    domain.cycle(wire_of(redirect_valid), name=f"{prefix}_cb_redir_v")
+    domain.cycle(wire_of(redirect_target), name=f"{prefix}_cb_redir_tgt")
     return _out
 
 
-build_ctrlblock.__pycircuit_name__ = "ctrlblock"
+ctrlblock.__pycircuit_name__ = "ctrlblock"
 
 
 if __name__ == "__main__":
-    print(compile_cycle_aware(
-        build_ctrlblock, name="ctrlblock", eager=True,
-        decode_width=2, commit_width=2,
-        ptag_w=4, pc_width=16, rob_idx_w=4,
-    ).emit_mlir())
+    pass

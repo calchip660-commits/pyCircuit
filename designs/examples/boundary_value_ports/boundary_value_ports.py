@@ -1,43 +1,46 @@
 from __future__ import annotations
 
-from pycircuit import Circuit, module, compile_cycle_aware, CycleAwareCircuit, CycleAwareDomain, u
+from pycircuit import (
+    CycleAwareCircuit,
+    CycleAwareDomain,
+    cas,
+    wire_of,
+)
 
 
-@module(value_params={"gain": "i8", "bias": "i32", "enable": "i1"})
-def _lane(m: Circuit, x, gain, bias, enable, *, width: int = 32):
+def _lane(domain, m, x, gain, bias, enable, *, width: int = 32):
+    _ = domain, m
     y_add = (x + gain + bias)[0:width]
-    y = y_add if enable else x
-    m.output("y", y)
+    return y_add if enable else x
+
+
+def _sum3(a, b, c, *, width: int):
+    return (a + b + c)[0:width]
 
 
 def build(m: CycleAwareCircuit, domain: CycleAwareDomain, *, width: int = 32):
-    _ = domain
-    seed = m.input("seed", width=width)
+    seed = cas(domain, m.input("seed", width=width), cycle=0)
 
-    lane0 = m.new(
-        _lane,
-        name="lane0",
-        params={"width": width},
-        bind={"x": seed, "gain": 1, "bias": 5, "enable": 1},
-    ).outputs
-    lane1 = m.new(
-        _lane,
-        name="lane1",
-        params={"width": width},
-        bind={"x": seed, "gain": 3, "bias": 9, "enable": u(1, 1)},
-    ).outputs
-    lane2 = m.new(
-        _lane,
-        name="lane2",
-        params={"width": width},
-        bind={"x": seed, "gain": u(8, 7), "bias": u(width, 11), "enable": u(1, 0)},
-    ).outputs
+    g0 = 1
+    b0 = 5
+    e0 = 1
+    lane0 = _lane(domain, m, seed, g0, b0, e0, width=width)
 
-    acc = (lane0.read() + lane1.read() + lane2.read())[0:width]
-    m.output("acc", acc)
+    g1 = 3
+    b1 = 9
+    e1 = 1
+    lane1 = _lane(domain, m, seed, g1, b1, e1, width=width)
+
+    g2 = 7
+    b2 = 11
+    e2 = 0
+    lane2 = _lane(domain, m, seed, g2, b2, e2, width=width)
+
+    acc = _sum3(lane0, lane1, lane2, width=width)
+    m.output("acc", wire_of(acc))
 
 
 build.__pycircuit_name__ = "boundary_value_ports"
 
 if __name__ == "__main__":
-    print(compile_cycle_aware(build, name="boundary_value_ports", width=32).emit_mlir())
+    pass

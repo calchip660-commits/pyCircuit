@@ -11,7 +11,10 @@ from pycircuit import (
 )
 
 
-def build(m: CycleAwareCircuit, domain: CycleAwareDomain, *,
+def build(
+    m: CycleAwareCircuit,
+    domain: CycleAwareDomain,
+    *,
     ptag_count: int = 256,
     const_count: int = 128,
     nr: int = 10,
@@ -24,7 +27,9 @@ def build(m: CycleAwareCircuit, domain: CycleAwareDomain, *,
     if ptag_n <= 0:
         raise ValueError("regfile ptag_count must be > 0")
     if const_n < 0 or const_n > ptag_n:
-        raise ValueError("regfile const_count must satisfy 0 <= const_count <= ptag_count")
+        raise ValueError(
+            "regfile const_count must satisfy 0 <= const_count <= ptag_count"
+        )
     if nr_n <= 0:
         raise ValueError("regfile nr must be > 0")
     if nw_n <= 0:
@@ -37,10 +42,14 @@ def build(m: CycleAwareCircuit, domain: CycleAwareDomain, *,
     # ══════════════════════════════════════════════════════════════
     # Cycle 0 — Inputs
     # ══════════════════════════════════════════════════════════════
-    raddr = [cas(domain, m.input(f"raddr{i}", width=ptag_w), cycle=0) for i in range(nr_n)]
-    wen   = [cas(domain, m.input(f"wen{i}",   width=1),      cycle=0) for i in range(nw_n)]
-    waddr = [cas(domain, m.input(f"waddr{i}", width=ptag_w), cycle=0) for i in range(nw_n)]
-    wdata = [cas(domain, m.input(f"wdata{i}", width=64),     cycle=0) for i in range(nw_n)]
+    raddr = [
+        cas(domain, m.input(f"raddr{i}", width=ptag_w), cycle=0) for i in range(nr_n)
+    ]
+    wen = [cas(domain, m.input(f"wen{i}", width=1), cycle=0) for i in range(nw_n)]
+    waddr = [
+        cas(domain, m.input(f"waddr{i}", width=ptag_w), cycle=0) for i in range(nw_n)
+    ]
+    wdata = [cas(domain, m.input(f"wdata{i}", width=64), cycle=0) for i in range(nw_n)]
 
     wdata_lo = [wd[0:32] for wd in wdata]
     wdata_hi = [wd[32:64] for wd in wdata]
@@ -48,8 +57,14 @@ def build(m: CycleAwareCircuit, domain: CycleAwareDomain, *,
     # ══════════════════════════════════════════════════════════════
     # Cycle 0 — Storage state (feedback registers via domain.signal)
     # ══════════════════════════════════════════════════════════════
-    bank0 = [domain.signal(width=32, reset_value=0, name=f"rf_bank0_{i}") for i in range(storage_depth)]
-    bank1 = [domain.signal(width=32, reset_value=0, name=f"rf_bank1_{i}") for i in range(storage_depth)]
+    bank0 = [
+        domain.signal(width=32, reset_value=0, name=f"rf_bank0_{i}")
+        for i in range(storage_depth)
+    ]
+    bank1 = [
+        domain.signal(width=32, reset_value=0, name=f"rf_bank1_{i}")
+        for i in range(storage_depth)
+    ]
 
     # ══════════════════════════════════════════════════════════════
     # Cycle 0 — Combinational read logic
@@ -101,7 +116,9 @@ def build(m: CycleAwareCircuit, domain: CycleAwareDomain, *,
         next_lo: CycleAwareSignal = bank0[sidx]
         next_hi: CycleAwareSignal = bank1[sidx]
         for lane in range(nw_n):
-            hit = wen[lane] & (waddr[lane] == cas(domain, m.const(ptag, width=ptag_w), cycle=0))
+            hit = wen[lane] & (
+                waddr[lane] == cas(domain, m.const(ptag, width=ptag_w), cycle=0)
+            )
             we_any = we_any | hit
             next_lo = mux(hit, wdata_lo[lane], next_lo)
             next_hi = mux(hit, wdata_hi[lane], next_hi)

@@ -45,10 +45,16 @@ def tcb(
     Each snoop port provides a tag to check; output is a hit flag.
     """
 
-    bc_valid = [_in(inputs, f"bc_valid{i}", m, domain, prefix, 1) for i in range(n_ports)]
-    bc_tag   = [_in(inputs, f"bc_tag{i}", m, domain, prefix, tag_w) for i in range(n_ports)]
+    bc_valid = [
+        _in(inputs, f"bc_valid{i}", m, domain, prefix, 1) for i in range(n_ports)
+    ]
+    bc_tag = [
+        _in(inputs, f"bc_tag{i}", m, domain, prefix, tag_w) for i in range(n_ports)
+    ]
 
-    snoop_tag = [_in(inputs, f"snoop_tag{i}", m, domain, prefix, tag_w) for i in range(n_snoop)]
+    snoop_tag = [
+        _in(inputs, f"snoop_tag{i}", m, domain, prefix, tag_w) for i in range(n_snoop)
+    ]
 
     outs: dict = {}
     for s in range(n_snoop):

@@ -50,29 +50,58 @@ def tile_rat(
 ) -> dict:
     # ── Cycle 0: Inputs ──────────────────────────────────────────────
     # Up to 3 tile source lookups per slot
-    src_arch = [[_in(inputs, f"src{s}_arch{i}", m, domain, prefix, arch_w)
-                 for i in range(width)] for s in range(n_tile_src)]
+    src_arch = [
+        [
+            _in(inputs, f"src{s}_arch{i}", m, domain, prefix, arch_w)
+            for i in range(width)
+        ]
+        for s in range(n_tile_src)
+    ]
 
-    dst_valid = [_in(inputs, f"dst_valid{i}", m, domain, prefix, 1) for i in range(width)]
-    dst_arch  = [_in(inputs, f"dst_arch{i}", m, domain, prefix, arch_w) for i in range(width)]
-    dst_phys  = [_in(inputs, f"dst_phys{i}", m, domain, prefix, phys_w) for i in range(width)]
+    dst_valid = [
+        _in(inputs, f"dst_valid{i}", m, domain, prefix, 1) for i in range(width)
+    ]
+    dst_arch = [
+        _in(inputs, f"dst_arch{i}", m, domain, prefix, arch_w) for i in range(width)
+    ]
+    dst_phys = [
+        _in(inputs, f"dst_phys{i}", m, domain, prefix, phys_w) for i in range(width)
+    ]
 
     # TILE.MOVE: dst inherits src's phys tag and ready bit (no alloc)
-    is_tile_move = [_in(inputs, f"tile_move{i}", m, domain, prefix, 1) for i in range(width)]
-    move_src_arch = [_in(inputs, f"move_src{i}", m, domain, prefix, arch_w) for i in range(width)]
+    is_tile_move = [
+        _in(inputs, f"tile_move{i}", m, domain, prefix, 1) for i in range(width)
+    ]
+    move_src_arch = [
+        _in(inputs, f"move_src{i}", m, domain, prefix, arch_w) for i in range(width)
+    ]
 
     # TCB writeback (set ready)
-    tcb_valid = [_in(inputs, f"tcb_valid{i}", m, domain, prefix, 1) for i in range(TCB_PORTS)]
-    tcb_tag   = [_in(inputs, f"tcb_tag{i}", m, domain, prefix, phys_w) for i in range(TCB_PORTS)]
+    tcb_valid = [
+        _in(inputs, f"tcb_valid{i}", m, domain, prefix, 1) for i in range(TCB_PORTS)
+    ]
+    tcb_tag = [
+        _in(inputs, f"tcb_tag{i}", m, domain, prefix, phys_w) for i in range(TCB_PORTS)
+    ]
 
     # Checkpoint restore
-    restore     = _in(inputs, "restore", m, domain, prefix, 1)
-    restore_map = [_in(inputs, f"restore_map{i}", m, domain, prefix, phys_w) for i in range(n_arch)]
-    restore_rdy = [_in(inputs, f"restore_rdy{i}", m, domain, prefix, 1) for i in range(n_arch)]
+    restore = _in(inputs, "restore", m, domain, prefix, 1)
+    restore_map = [
+        _in(inputs, f"restore_map{i}", m, domain, prefix, phys_w) for i in range(n_arch)
+    ]
+    restore_rdy = [
+        _in(inputs, f"restore_rdy{i}", m, domain, prefix, 1) for i in range(n_arch)
+    ]
 
     # ── State ────────────────────────────────────────────────────────
-    mapping = [domain.signal(width=phys_w, reset_value=i, name=f"{prefix}_map_{i}") for i in range(n_arch)]
-    ready   = [domain.signal(width=1, reset_value=1, name=f"{prefix}_rdy_{i}") for i in range(n_arch)]
+    mapping = [
+        domain.signal(width=phys_w, reset_value=i, name=f"{prefix}_map_{i}")
+        for i in range(n_arch)
+    ]
+    ready = [
+        domain.signal(width=1, reset_value=1, name=f"{prefix}_rdy_{i}")
+        for i in range(n_arch)
+    ]
 
     # ── Combinational: source lookups with intra-group bypass ────────
     outs: dict = {}
@@ -80,22 +109,22 @@ def tile_rat(
         for s in range(n_tile_src):
             sa = src_arch[s][slot]
             phys_out = mapping[0]
-            rdy_out  = ready[0]
+            rdy_out = ready[0]
             for a in range(n_arch):
                 hit = sa == cas(domain, m.const(a, width=arch_w), cycle=0)
                 phys_out = mux(hit, mapping[a], phys_out)
-                rdy_out  = mux(hit, ready[a],   rdy_out)
+                rdy_out = mux(hit, ready[a], rdy_out)
 
             for older in range(slot):
                 match = dst_valid[older] & (dst_arch[older] == sa)
                 phys_out = mux(match, dst_phys[older], phys_out)
-                rdy_out  = mux(match, cas(domain, m.const(0, width=1), cycle=0), rdy_out)
+                rdy_out = mux(match, cas(domain, m.const(0, width=1), cycle=0), rdy_out)
 
             outs[f"src{s}_phys{slot}"] = phys_out
             outs[f"src{s}_rdy{slot}"] = rdy_out
             if inputs is None:
                 m.output(f"{prefix}_src{s}_phys{slot}", wire_of(phys_out))
-                m.output(f"{prefix}_src{s}_rdy{slot}",  wire_of(rdy_out))
+                m.output(f"{prefix}_src{s}_rdy{slot}", wire_of(rdy_out))
 
     # ── Old physical tag for orphan marking ──────────────────────────
     for slot in range(width):
@@ -133,14 +162,16 @@ def tile_rat(
 
             # TILE.MOVE: dst inherits src's current phys tag + ready
             move_phys = mapping[0]
-            move_rdy  = ready[0]
+            move_rdy = ready[0]
             for a2 in range(n_arch):
-                mhit = move_src_arch[slot] == cas(domain, m.const(a2, width=arch_w), cycle=0)
+                mhit = move_src_arch[slot] == cas(
+                    domain, m.const(a2, width=arch_w), cycle=0
+                )
                 move_phys = mux(mhit, mapping[a2], move_phys)
-                move_rdy  = mux(mhit, ready[a2],   move_rdy)
+                move_rdy = mux(mhit, ready[a2], move_rdy)
             move_hit = is_tile_move[slot] & (dst_arch[slot] == atag)
             new_map = mux(move_hit, move_phys, new_map)
-            new_rdy = mux(move_hit, move_rdy,  new_rdy)
+            new_rdy = mux(move_hit, move_rdy, new_rdy)
 
         # TCB: set ready for matching physical tags
         for t in range(TCB_PORTS):
@@ -148,7 +179,7 @@ def tile_rat(
             new_rdy = mux(tcb_match, cas(domain, m.const(1, width=1), cycle=0), new_rdy)
 
         mapping[a] <<= mux(restore, restore_map[a], new_map)
-        ready[a]   <<= mux(restore, restore_rdy[a], new_rdy)
+        ready[a] <<= mux(restore, restore_rdy[a], new_rdy)
 
     return outs
 
@@ -157,6 +188,16 @@ tile_rat.__pycircuit_name__ = "tile_rat"
 
 
 if __name__ == "__main__":
-    print(compile_cycle_aware(tile_rat, name="tile_rat", eager=True,
-                               n_arch=8, arch_w=3, phys_w=4, width=2, n_tile_src=2,
-                               prefix="trat").emit_mlir())
+    print(
+        compile_cycle_aware(
+            tile_rat,
+            name="tile_rat",
+            eager=True,
+            n_arch=8,
+            arch_w=3,
+            phys_w=4,
+            width=2,
+            n_tile_src=2,
+            prefix="trat",
+        ).emit_mlir()
+    )

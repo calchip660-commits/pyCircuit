@@ -22,7 +22,9 @@ def _to_bcd8(m: CycleAwareCircuit, domain: CycleAwareDomain, v, width: int):
     return cas(domain, m.cat(tens_w[0:4], ones_w[0:4]), cycle=v.cycle)
 
 
-def build(m: CycleAwareCircuit, domain: CycleAwareDomain, clk_freq: int = 50_000_000) -> None:
+def build(
+    m: CycleAwareCircuit, domain: CycleAwareDomain, clk_freq: int = 50_000_000
+) -> None:
     prescaler_w = max((int(clk_freq) - 1).bit_length(), 1)
 
     prescaler = domain.signal(width=prescaler_w, reset_value=0, name="prescaler")
@@ -59,12 +61,22 @@ def build(m: CycleAwareCircuit, domain: CycleAwareDomain, clk_freq: int = 50_000
 
     mode_next = MODE_RUN if (mode == MODE_SET_SEC) else (mode + 1)
 
-    hour_p = (0 if (hour == 23) else (hour + 1)) if (btn_plus & is_set_hour) else hr_n_tick
-    min_p = (0 if (minute == 59) else (minute + 1)) if (btn_plus & is_set_min) else min_n_tick
+    hour_p = (
+        (0 if (hour == 23) else (hour + 1)) if (btn_plus & is_set_hour) else hr_n_tick
+    )
+    min_p = (
+        (0 if (minute == 59) else (minute + 1))
+        if (btn_plus & is_set_min)
+        else min_n_tick
+    )
     sec_p = (0 if (sec == 59) else (sec + 1)) if (btn_plus & is_set_sec) else sec_n_tick
 
-    hour_n = (23 if (hour == 0) else (hour - 1)) if (btn_minus & is_set_hour) else hour_p
-    min_n = (59 if (minute == 0) else (minute - 1)) if (btn_minus & is_set_min) else min_p
+    hour_n = (
+        (23 if (hour == 0) else (hour - 1)) if (btn_minus & is_set_hour) else hour_p
+    )
+    min_n = (
+        (59 if (minute == 0) else (minute - 1)) if (btn_minus & is_set_min) else min_p
+    )
     sec_n = (59 if (sec == 0) else (sec - 1)) if (btn_minus & is_set_sec) else sec_p
 
     m.output("hours_bcd", wire_of(_to_bcd8(m, domain, hour, 5)))
@@ -87,4 +99,8 @@ build.__pycircuit_name__ = "digital_clock"
 
 
 if __name__ == "__main__":
-    print(compile_cycle_aware(build, name="digital_clock", clk_freq=50_000_000).emit_mlir())
+    print(
+        compile_cycle_aware(
+            build, name="digital_clock", clk_freq=50_000_000
+        ).emit_mlir()
+    )

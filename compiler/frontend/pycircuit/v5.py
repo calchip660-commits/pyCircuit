@@ -258,7 +258,11 @@ class CycleAwareDomain:
                 input_sigs.append(self._cd.rst)
             elif port_name in input_map:
                 w = _to_wire(input_map[port_name])
-                if w.sig.ty != port_sig.ty and w.sig.ty.startswith("i") and port_sig.ty.startswith("i"):
+                if (
+                    w.sig.ty != port_sig.ty
+                    and w.sig.ty.startswith("i")
+                    and port_sig.ty.startswith("i")
+                ):
                     actual_w = int(w.sig.ty[1:])
                     expect_w = int(port_sig.ty[1:])
                     if actual_w < expect_w:
@@ -272,7 +276,7 @@ class CycleAwareDomain:
                 else:
                     width = 1
                 if port_name.startswith(canonical_prefix + "_"):
-                    suffix = port_name[len(canonical_prefix) + 1:]
+                    suffix = port_name[len(canonical_prefix) + 1 :]
                     parent_port_name = f"{prefix}_{suffix}"
                 else:
                     parent_port_name = f"{prefix}_{port_name}"
@@ -309,15 +313,20 @@ class CycleAwareDomain:
 
 # ── Hierarchical compilation helpers ──────────────────────────────────────
 
-def _hierarchical_cache_key(fn: Callable[..., Any], kwargs: dict[str, Any]) -> tuple[Any, ...]:
+
+def _hierarchical_cache_key(
+    fn: Callable[..., Any], kwargs: dict[str, Any]
+) -> tuple[Any, ...]:
     """Build a cache key from function identity + compile-time kwargs.
 
     ``prefix`` is excluded because it only affects port naming, not the
     module's structural identity."""
     import json as _json
+
     kw_str = _json.dumps(
         {k: repr(v) for k, v in sorted(kwargs.items()) if k != "prefix"},
-        sort_keys=True, separators=(",", ":"),
+        sort_keys=True,
+        separators=(",", ":"),
     )
     return (id(fn), kw_str)
 
@@ -405,14 +414,26 @@ def _make_compiled_module(fn: Any, circuit: CycleAwareCircuit, sym_name: str) ->
     kind = _kind_of(fn)
     inline = "true" if _inline_of(fn) else "false"
     base = _base_name(fn)
-    struct_metrics = _json.dumps({
-        "source_loc": 0, "ast_node_count": 0, "hardware_call_count": 0,
-        "loop_count": 0, "module_call_count": 0, "state_call_count": 0,
-        "estimated_inline_cost": 0, "instance_count": 0,
-        "state_alloc_count": 0, "collection_count": 0,
-        "collection_instance_count": 0, "module_family_collection_count": 0,
-        "repeat_pressure": 0, "repeated_body_clusters": [],
-    }, sort_keys=True, separators=(",", ":"))
+    struct_metrics = _json.dumps(
+        {
+            "source_loc": 0,
+            "ast_node_count": 0,
+            "hardware_call_count": 0,
+            "loop_count": 0,
+            "module_call_count": 0,
+            "state_call_count": 0,
+            "estimated_inline_cost": 0,
+            "instance_count": 0,
+            "state_alloc_count": 0,
+            "collection_count": 0,
+            "collection_instance_count": 0,
+            "module_family_collection_count": 0,
+            "repeat_pressure": 0,
+            "repeated_body_clusters": [],
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    )
     struct_collections = "[]"
 
     circuit.set_func_attr("pyc.kind", kind)
@@ -446,7 +467,9 @@ def _clock_domain_ports(m: Circuit, name: str) -> ClockDomain:
     return m.domain(name)
 
 
-def _as_wire(m: Circuit, sig: Union[Wire, Reg, "CycleAwareSignal", "ForwardSignal", Signal]) -> Wire:
+def _as_wire(
+    m: Circuit, sig: Union[Wire, Reg, "CycleAwareSignal", "ForwardSignal", Signal]
+) -> Wire:
     if isinstance(sig, ForwardSignal):
         return sig._state._cas._w
     if isinstance(sig, CycleAwareSignal):
@@ -698,6 +721,7 @@ def _to_wire(v: "Wire | Reg | CycleAwareSignal | StateSignal | ForwardSignal") -
 
 # ── Hierarchical-composition helpers ──────────────────────────────────────
 
+
 def submodule_input(
     io: dict[str, Any] | None,
     key: str,
@@ -745,7 +769,9 @@ def submodule_input(
             return sig  # type: ignore[return-value]
         if isinstance(sig, Wire):
             return CycleAwareSignal(domain, sig, cycle)
-        raise TypeError(f"submodule_input: unexpected type for key '{key}': {type(sig).__name__}")
+        raise TypeError(
+            f"submodule_input: unexpected type for key '{key}': {type(sig).__name__}"
+        )
     return CycleAwareSignal(domain, m.input(f"{prefix}_{key}", width=width), cycle)
 
 
@@ -978,16 +1004,22 @@ def _is_cas(v: object) -> bool:
 
 def mux(
     cond: Union[Wire, Reg, CycleAwareSignal, StateSignal, ForwardSignal],
-    a: Union[Wire, Reg, CycleAwareSignal, StateSignal, ForwardSignal, int, LiteralValue],
-    b: Union[Wire, Reg, CycleAwareSignal, StateSignal, ForwardSignal, int, LiteralValue],
+    a: Union[
+        Wire, Reg, CycleAwareSignal, StateSignal, ForwardSignal, int, LiteralValue
+    ],
+    b: Union[
+        Wire, Reg, CycleAwareSignal, StateSignal, ForwardSignal, int, LiteralValue
+    ],
 ) -> Union[Wire, CycleAwareSignal]:
     if _is_cas(cond) or _is_cas(a) or _is_cas(b):
+
         def _unwrap(v: object) -> object:
             if isinstance(v, ForwardSignal):
                 return v._state._cas
             if isinstance(v, StateSignal):
                 return v._cas
             return v
+
         return _mux_cycle_aware(_unwrap(cond), _unwrap(a), _unwrap(b))
     return _mux_wire(cond, a, b)
 
@@ -1050,7 +1082,7 @@ def _mux_cycle_aware(
     m = dom._m
 
     def to_cas(
-        x: Union[Wire, Reg, CycleAwareSignal, int, LiteralValue]
+        x: Union[Wire, Reg, CycleAwareSignal, int, LiteralValue],
     ) -> CycleAwareSignal:
         if isinstance(x, CycleAwareSignal):
             return x
@@ -1192,6 +1224,7 @@ def compile_cycle_aware(
 
         if hierarchical:
             from .design import Design
+
             design = Design(top=str(circuit_name))
             dom._hierarchical = True
             dom._design = design

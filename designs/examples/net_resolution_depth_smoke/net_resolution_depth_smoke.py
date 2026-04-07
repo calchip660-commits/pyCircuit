@@ -28,4 +28,8 @@ build.__pycircuit_name__ = "net_resolution_depth_smoke"
 
 
 if __name__ == "__main__":
-    print(compile_cycle_aware(build, name="net_resolution_depth_smoke", eager=True, width=8).emit_mlir())
+    print(
+        compile_cycle_aware(
+            build, name="net_resolution_depth_smoke", eager=True, width=8
+        ).emit_mlir()
+    )

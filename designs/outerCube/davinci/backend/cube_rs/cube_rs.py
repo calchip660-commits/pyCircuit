@@ -31,7 +31,6 @@ def _in(io, key, m, domain, prefix, width):
     return cas(domain, m.input(f"{prefix}_{key}", width=width), cycle=0)
 
 
-
 def cube_rs(
     m: CycleAwareCircuit,
     domain: CycleAwareDomain,
@@ -49,27 +48,64 @@ def cube_rs(
     eidx_w = max(1, (n_entries - 1).bit_length())
     outs: dict = {}
 
-    disp_valid = [_in(inputs, f"dv{i}", m, domain, prefix, 1) for i in range(n_dispatch)]
-    disp_op    = [_in(inputs, f"dop{i}", m, domain, prefix, uop_w) for i in range(n_dispatch)]
-    disp_ptsrc = [[_in(inputs, f"dts{s}_{i}", m, domain, prefix, ttag_w)
-                   for i in range(n_dispatch)] for s in range(n_tile_src)]
-    disp_trdy  = [[_in(inputs, f"dtr{s}_{i}", m, domain, prefix, 1)
-                   for i in range(n_dispatch)] for s in range(n_tile_src)]
-    disp_ptdst = [_in(inputs, f"dtd{i}", m, domain, prefix, ttag_w) for i in range(n_dispatch)]
+    disp_valid = [
+        _in(inputs, f"dv{i}", m, domain, prefix, 1) for i in range(n_dispatch)
+    ]
+    disp_op = [
+        _in(inputs, f"dop{i}", m, domain, prefix, uop_w) for i in range(n_dispatch)
+    ]
+    disp_ptsrc = [
+        [
+            _in(inputs, f"dts{s}_{i}", m, domain, prefix, ttag_w)
+            for i in range(n_dispatch)
+        ]
+        for s in range(n_tile_src)
+    ]
+    disp_trdy = [
+        [_in(inputs, f"dtr{s}_{i}", m, domain, prefix, 1) for i in range(n_dispatch)]
+        for s in range(n_tile_src)
+    ]
+    disp_ptdst = [
+        _in(inputs, f"dtd{i}", m, domain, prefix, ttag_w) for i in range(n_dispatch)
+    ]
 
     tcb_valid = [_in(inputs, f"tcb_v{i}", m, domain, prefix, 1) for i in range(n_tcb)]
-    tcb_tag   = [_in(inputs, f"tcb_t{i}", m, domain, prefix, ttag_w) for i in range(n_tcb)]
+    tcb_tag = [
+        _in(inputs, f"tcb_t{i}", m, domain, prefix, ttag_w) for i in range(n_tcb)
+    ]
 
     flush = _in(inputs, "flush", m, domain, prefix, 1)
 
-    valid  = [domain.signal(width=1, reset_value=0, name=f"{prefix}_v_{e}") for e in range(n_entries)]
-    op     = [domain.signal(width=uop_w, reset_value=0, name=f"{prefix}_op_{e}") for e in range(n_entries)]
-    age    = [domain.signal(width=age_w, reset_value=0, name=f"{prefix}_ag_{e}") for e in range(n_entries)]
-    ptsrc  = [[domain.signal(width=ttag_w, reset_value=0, name=f"{prefix}_ts{s}_{e}")
-               for e in range(n_entries)] for s in range(n_tile_src)]
-    trdy   = [[domain.signal(width=1, reset_value=0, name=f"{prefix}_tr{s}_{e}")
-               for e in range(n_entries)] for s in range(n_tile_src)]
-    ptdst  = [domain.signal(width=ttag_w, reset_value=0, name=f"{prefix}_td_{e}") for e in range(n_entries)]
+    valid = [
+        domain.signal(width=1, reset_value=0, name=f"{prefix}_v_{e}")
+        for e in range(n_entries)
+    ]
+    op = [
+        domain.signal(width=uop_w, reset_value=0, name=f"{prefix}_op_{e}")
+        for e in range(n_entries)
+    ]
+    age = [
+        domain.signal(width=age_w, reset_value=0, name=f"{prefix}_ag_{e}")
+        for e in range(n_entries)
+    ]
+    ptsrc = [
+        [
+            domain.signal(width=ttag_w, reset_value=0, name=f"{prefix}_ts{s}_{e}")
+            for e in range(n_entries)
+        ]
+        for s in range(n_tile_src)
+    ]
+    trdy = [
+        [
+            domain.signal(width=1, reset_value=0, name=f"{prefix}_tr{s}_{e}")
+            for e in range(n_entries)
+        ]
+        for s in range(n_tile_src)
+    ]
+    ptdst = [
+        domain.signal(width=ttag_w, reset_value=0, name=f"{prefix}_td_{e}")
+        for e in range(n_entries)
+    ]
 
     age_ctr = domain.signal(width=age_w, reset_value=0, name=f"{prefix}_ac")
 
@@ -148,6 +184,17 @@ cube_rs.__pycircuit_name__ = "cube_rs"
 
 
 if __name__ == "__main__":
-    print(compile_cycle_aware(cube_rs, name="cube_rs", eager=True,
-                               n_entries=4, n_dispatch=2, n_tcb=2,
-                               n_tile_src=2, ttag_w=3, uop_w=4, age_w=3).emit_mlir())
+    print(
+        compile_cycle_aware(
+            cube_rs,
+            name="cube_rs",
+            eager=True,
+            n_entries=4,
+            n_dispatch=2,
+            n_tcb=2,
+            n_tile_src=2,
+            ttag_w=3,
+            uop_w=4,
+            age_w=3,
+        ).emit_mlir()
+    )

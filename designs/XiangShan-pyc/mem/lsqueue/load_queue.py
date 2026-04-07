@@ -14,6 +14,7 @@ Key features:
   M-LQ-004  Redirect/flush: roll back enqueue pointer
   M-LQ-005  Per-entry valid/committed/address-valid tracking
 """
+
 from __future__ import annotations
 
 import math
@@ -52,56 +53,101 @@ def load_queue(
     _in = inputs or {}
     _out: dict[str, CycleAwareSignal] = {}
 
-
     idx_w = max(1, math.ceil(math.log2(size)))
     ptr_w = idx_w + 1
 
     # ── Cycle 0: Inputs ──────────────────────────────────────────────
 
-    flush = (_in["flush"] if "flush" in _in else
+    flush = (
+        _in["flush"]
+        if "flush" in _in
+        else cas(domain, m.input(f"{prefix}_flush", width=1), cycle=0)
+    )
 
-        cas(domain, m.input(f"{prefix}_flush", width=1), cycle=0))
+    enq_valid = (
+        _in["enq_valid"]
+        if "enq_valid" in _in
+        else cas(domain, m.input(f"{prefix}_enq_valid", width=1), cycle=0)
+    )
+    enq_rob_idx = (
+        _in["enq_rob_idx"]
+        if "enq_rob_idx" in _in
+        else cas(domain, m.input(f"{prefix}_enq_rob_idx", width=rob_idx_width), cycle=0)
+    )
 
-    enq_valid = (_in["enq_valid"] if "enq_valid" in _in else
+    addr_update_valid = (
+        _in["addr_update_valid"]
+        if "addr_update_valid" in _in
+        else cas(domain, m.input(f"{prefix}_addr_update_valid", width=1), cycle=0)
+    )
+    addr_update_idx = (
+        _in["addr_update_idx"]
+        if "addr_update_idx" in _in
+        else cas(domain, m.input(f"{prefix}_addr_update_idx", width=idx_w), cycle=0)
+    )
+    addr_update_addr = (
+        _in["addr_update_addr"]
+        if "addr_update_addr" in _in
+        else cas(
+            domain, m.input(f"{prefix}_addr_update_addr", width=addr_width), cycle=0
+        )
+    )
 
-        cas(domain, m.input(f"{prefix}_enq_valid", width=1), cycle=0))
-    enq_rob_idx = (_in["enq_rob_idx"] if "enq_rob_idx" in _in else
-        cas(domain, m.input(f"{prefix}_enq_rob_idx", width=rob_idx_width), cycle=0))
+    commit_valid = (
+        _in["commit_valid"]
+        if "commit_valid" in _in
+        else cas(domain, m.input(f"{prefix}_commit_valid", width=1), cycle=0)
+    )
 
-    addr_update_valid = (_in["addr_update_valid"] if "addr_update_valid" in _in else
+    lookup_valid = (
+        _in["lookup_valid"]
+        if "lookup_valid" in _in
+        else cas(domain, m.input(f"{prefix}_lookup_valid", width=1), cycle=0)
+    )
+    lookup_addr = (
+        _in["lookup_addr"]
+        if "lookup_addr" in _in
+        else cas(domain, m.input(f"{prefix}_lookup_addr", width=addr_width), cycle=0)
+    )
 
-        cas(domain, m.input(f"{prefix}_addr_update_valid", width=1), cycle=0))
-    addr_update_idx = (_in["addr_update_idx"] if "addr_update_idx" in _in else
-        cas(domain, m.input(f"{prefix}_addr_update_idx", width=idx_w), cycle=0))
-    addr_update_addr = (_in["addr_update_addr"] if "addr_update_addr" in _in else
-        cas(domain, m.input(f"{prefix}_addr_update_addr", width=addr_width), cycle=0))
-
-    commit_valid = (_in["commit_valid"] if "commit_valid" in _in else
-
-        cas(domain, m.input(f"{prefix}_commit_valid", width=1), cycle=0))
-
-    lookup_valid = (_in["lookup_valid"] if "lookup_valid" in _in else
-
-        cas(domain, m.input(f"{prefix}_lookup_valid", width=1), cycle=0))
-    lookup_addr = (_in["lookup_addr"] if "lookup_addr" in _in else
-        cas(domain, m.input(f"{prefix}_lookup_addr", width=addr_width), cycle=0))
-
-    redirect_valid = (_in["redirect_valid"] if "redirect_valid" in _in else
-
-        cas(domain, m.input(f"{prefix}_redirect_valid", width=1), cycle=0))
-    redirect_rob_idx = (_in["redirect_rob_idx"] if "redirect_rob_idx" in _in else
-        cas(domain, m.input(f"{prefix}_redirect_rob_idx", width=rob_idx_width), cycle=0))
+    redirect_valid = (
+        _in["redirect_valid"]
+        if "redirect_valid" in _in
+        else cas(domain, m.input(f"{prefix}_redirect_valid", width=1), cycle=0)
+    )
+    redirect_rob_idx = (
+        _in["redirect_rob_idx"]
+        if "redirect_rob_idx" in _in
+        else cas(
+            domain, m.input(f"{prefix}_redirect_rob_idx", width=rob_idx_width), cycle=0
+        )
+    )
 
     zero1 = cas(domain, m.const(0, width=1), cycle=0)
     one1 = cas(domain, m.const(1, width=1), cycle=0)
 
     # ── Entry storage ─────────────────────────────────────────────────
 
-    e_valid = [domain.signal(width=1, reset_value=0, name=f"{prefix}_lq_v_{i}") for i in range(size)]
-    e_addr_valid = [domain.signal(width=1, reset_value=0, name=f"{prefix}_lq_av_{i}") for i in range(size)]
-    e_committed = [domain.signal(width=1, reset_value=0, name=f"{prefix}_lq_cm_{i}") for i in range(size)]
-    e_addr = [domain.signal(width=addr_width, reset_value=0, name=f"{prefix}_lq_a_{i}") for i in range(size)]
-    e_rob = [domain.signal(width=rob_idx_width, reset_value=0, name=f"{prefix}_lq_r_{i}") for i in range(size)]
+    e_valid = [
+        domain.signal(width=1, reset_value=0, name=f"{prefix}_lq_v_{i}")
+        for i in range(size)
+    ]
+    e_addr_valid = [
+        domain.signal(width=1, reset_value=0, name=f"{prefix}_lq_av_{i}")
+        for i in range(size)
+    ]
+    e_committed = [
+        domain.signal(width=1, reset_value=0, name=f"{prefix}_lq_cm_{i}")
+        for i in range(size)
+    ]
+    e_addr = [
+        domain.signal(width=addr_width, reset_value=0, name=f"{prefix}_lq_a_{i}")
+        for i in range(size)
+    ]
+    e_rob = [
+        domain.signal(width=rob_idx_width, reset_value=0, name=f"{prefix}_lq_r_{i}")
+        for i in range(size)
+    ]
 
     enq_ptr = domain.signal(width=ptr_w, reset_value=0, name=f"{prefix}_lq_enq")
     deq_ptr = domain.signal(width=ptr_w, reset_value=0, name=f"{prefix}_lq_deq")
@@ -171,17 +217,21 @@ def load_queue(
         e_valid[j].assign(mux(is_deq, zero1, e_valid[j]), when=is_deq)
 
     # Pointer updates
-    next_enq = mux(can_enq,
-                    cas(domain, (wire_of(enq_ptr) + u(ptr_w, 1))[0:ptr_w], cycle=0),
-                    enq_ptr)
+    next_enq = mux(
+        can_enq,
+        cas(domain, (wire_of(enq_ptr) + u(ptr_w, 1))[0:ptr_w], cycle=0),
+        enq_ptr,
+    )
     next_enq = mux(redirect_valid, deq_ptr, next_enq)
     next_enq = mux(flush, deq_ptr, next_enq)
     enq_ptr <<= next_enq
 
     deq_commit = commit_valid & (~empty)
-    next_deq = mux(deq_commit,
-                    cas(domain, (wire_of(deq_ptr) + u(ptr_w, 1))[0:ptr_w], cycle=0),
-                    deq_ptr)
+    next_deq = mux(
+        deq_commit,
+        cas(domain, (wire_of(deq_ptr) + u(ptr_w, 1))[0:ptr_w], cycle=0),
+        deq_ptr,
+    )
     deq_ptr <<= next_deq
 
     # Flush: invalidate all entries
@@ -194,7 +244,12 @@ load_queue.__pycircuit_name__ = "load_queue"
 
 
 if __name__ == "__main__":
-    print(compile_cycle_aware(
-        load_queue, name="load_queue", eager=True,
-        size=8, addr_width=36,
-    ).emit_mlir())
+    print(
+        compile_cycle_aware(
+            load_queue,
+            name="load_queue",
+            eager=True,
+            size=8,
+            addr_width=36,
+        ).emit_mlir()
+    )

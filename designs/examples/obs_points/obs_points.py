@@ -26,4 +26,6 @@ build.__pycircuit_name__ = "obs_points"
 
 
 if __name__ == "__main__":
-    print(compile_cycle_aware(build, name="obs_points", eager=True, width=8).emit_mlir())
+    print(
+        compile_cycle_aware(build, name="obs_points", eager=True, width=8).emit_mlir()
+    )

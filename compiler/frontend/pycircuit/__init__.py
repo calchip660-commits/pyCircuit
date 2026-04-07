@@ -12,7 +12,13 @@ from .connectors import (
     RegConnector,
     WireConnector,
 )
-from .design import const, function, module, probe as _probe_decorator, testbench as _testbench_decorator
+from .design import (
+    const,
+    function,
+    module,
+    probe as _probe_decorator,
+    testbench as _testbench_decorator,
+)
 from .hw import Bundle, Circuit, ClockDomain, Pop, Reg, Vec, Wire, cat, unsigned
 from .jit import JitError, compile
 from .literals import LiteralValue, S, U, s, u
@@ -36,7 +42,14 @@ from .v5 import (
     wire_of,
 )
 from . import lib
-from .probe import ProbeBuilder, ProbeError, ProbeRef, ProbeView, TbProbeHandle, TbProbes
+from .probe import (
+    ProbeBuilder,
+    ProbeError,
+    ProbeRef,
+    ProbeView,
+    TbProbeHandle,
+    TbProbes,
+)
 from .tb import Tb, sva
 from .testbench import TestbenchProgram
 

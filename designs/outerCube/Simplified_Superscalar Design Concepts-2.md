@@ -268,5 +268,3 @@ When **RAT says it's an Orphan** AND **Reference Count = 0**, the physical regis
 ### Summary
 *   **For Dispatch:** The RAT provides the unique Physical Register IDs that act as "wait tags" so Reservation Stations can wake up instructions out-of-order safely.
 *   **For Completion:** The RAT's act of re-mapping architectural registers is what flags old physical registers as "Orphans," allowing the hardware to know when data is completely dead and the physical register can be safely recycled.
-
-

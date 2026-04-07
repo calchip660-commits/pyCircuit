@@ -30,8 +30,8 @@ def test_branch_recovery_tb():
     ct.timeout(64)
 
     # BEQ x1,x2,offset (opcode[6:0]=1100011, funct3=000)
-    beq_instr = (0b0000000_00010_00001_000_00000_1100011)
-    add_instr = (0b0000000_00100_00011_000_00101_0110011)
+    beq_instr = 0b0000000_00010_00001_000_00000_1100011
+    add_instr = 0b0000000_00100_00011_000_00101_0110011
 
     # Cycle 0: branch + speculative ADD
     ct.drive("dv_icache_data0", beq_instr)

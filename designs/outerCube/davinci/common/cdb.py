@@ -47,12 +47,20 @@ def cdb(
     """
 
     # ── Broadcast inputs (from execution units) ──────────────────────
-    bc_valid = [_in(inputs, f"bc_valid{i}", m, domain, prefix, 1) for i in range(n_ports)]
-    bc_tag   = [_in(inputs, f"bc_tag{i}", m, domain, prefix, tag_w) for i in range(n_ports)]
-    bc_data  = [_in(inputs, f"bc_data{i}", m, domain, prefix, data_w) for i in range(n_ports)]
+    bc_valid = [
+        _in(inputs, f"bc_valid{i}", m, domain, prefix, 1) for i in range(n_ports)
+    ]
+    bc_tag = [
+        _in(inputs, f"bc_tag{i}", m, domain, prefix, tag_w) for i in range(n_ports)
+    ]
+    bc_data = [
+        _in(inputs, f"bc_data{i}", m, domain, prefix, data_w) for i in range(n_ports)
+    ]
 
     # ── Snoop query ports (from RS entries / RF) ─────────────────────
-    snoop_tag = [_in(inputs, f"snoop_tag{i}", m, domain, prefix, tag_w) for i in range(n_snoop)]
+    snoop_tag = [
+        _in(inputs, f"snoop_tag{i}", m, domain, prefix, tag_w) for i in range(n_snoop)
+    ]
 
     zero_data = cas(domain, m.const(0, width=data_w), cycle=0)
 

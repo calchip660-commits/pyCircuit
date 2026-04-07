@@ -35,7 +35,6 @@ def _in(io, key, m, domain, prefix, width):
     return cas(domain, m.input(f"{prefix}_{key}", width=width), cycle=0)
 
 
-
 def mte_rs(
     m: CycleAwareCircuit,
     domain: CycleAwareDomain,
@@ -55,31 +54,78 @@ def mte_rs(
     eidx_w = max(1, (n_entries - 1).bit_length())
     outs: dict = {}
 
-    disp_valid = [_in(inputs, f"dv{i}", m, domain, prefix, 1) for i in range(n_dispatch)]
-    disp_op    = [_in(inputs, f"dop{i}", m, domain, prefix, uop_w) for i in range(n_dispatch)]
-    disp_psrc  = [_in(inputs, f"dps{i}", m, domain, prefix, stag_w) for i in range(n_dispatch)]
-    disp_srdy  = [_in(inputs, f"dsr{i}", m, domain, prefix, 1) for i in range(n_dispatch)]
-    disp_ptsrc = [_in(inputs, f"dts{i}", m, domain, prefix, ttag_w) for i in range(n_dispatch)]
-    disp_trdy  = [_in(inputs, f"dtr{i}", m, domain, prefix, 1) for i in range(n_dispatch)]
-    disp_ptdst = [_in(inputs, f"dtd{i}", m, domain, prefix, ttag_w) for i in range(n_dispatch)]
-    disp_psdst = [_in(inputs, f"dpsd{i}", m, domain, prefix, stag_w) for i in range(n_dispatch)]
+    disp_valid = [
+        _in(inputs, f"dv{i}", m, domain, prefix, 1) for i in range(n_dispatch)
+    ]
+    disp_op = [
+        _in(inputs, f"dop{i}", m, domain, prefix, uop_w) for i in range(n_dispatch)
+    ]
+    disp_psrc = [
+        _in(inputs, f"dps{i}", m, domain, prefix, stag_w) for i in range(n_dispatch)
+    ]
+    disp_srdy = [
+        _in(inputs, f"dsr{i}", m, domain, prefix, 1) for i in range(n_dispatch)
+    ]
+    disp_ptsrc = [
+        _in(inputs, f"dts{i}", m, domain, prefix, ttag_w) for i in range(n_dispatch)
+    ]
+    disp_trdy = [
+        _in(inputs, f"dtr{i}", m, domain, prefix, 1) for i in range(n_dispatch)
+    ]
+    disp_ptdst = [
+        _in(inputs, f"dtd{i}", m, domain, prefix, ttag_w) for i in range(n_dispatch)
+    ]
+    disp_psdst = [
+        _in(inputs, f"dpsd{i}", m, domain, prefix, stag_w) for i in range(n_dispatch)
+    ]
 
     cdb_valid = [_in(inputs, f"cdb_v{i}", m, domain, prefix, 1) for i in range(n_cdb)]
-    cdb_tag   = [_in(inputs, f"cdb_t{i}", m, domain, prefix, stag_w) for i in range(n_cdb)]
+    cdb_tag = [
+        _in(inputs, f"cdb_t{i}", m, domain, prefix, stag_w) for i in range(n_cdb)
+    ]
     tcb_valid = [_in(inputs, f"tcb_v{i}", m, domain, prefix, 1) for i in range(n_tcb)]
-    tcb_tag   = [_in(inputs, f"tcb_t{i}", m, domain, prefix, ttag_w) for i in range(n_tcb)]
+    tcb_tag = [
+        _in(inputs, f"tcb_t{i}", m, domain, prefix, ttag_w) for i in range(n_tcb)
+    ]
 
     flush = _in(inputs, "flush", m, domain, prefix, 1)
 
-    valid  = [domain.signal(width=1, reset_value=0, name=f"{prefix}_v_{e}") for e in range(n_entries)]
-    op     = [domain.signal(width=uop_w, reset_value=0, name=f"{prefix}_op_{e}") for e in range(n_entries)]
-    age    = [domain.signal(width=age_w, reset_value=0, name=f"{prefix}_ag_{e}") for e in range(n_entries)]
-    psrc   = [domain.signal(width=stag_w, reset_value=0, name=f"{prefix}_ps_{e}") for e in range(n_entries)]
-    srdy   = [domain.signal(width=1, reset_value=0, name=f"{prefix}_sr_{e}") for e in range(n_entries)]
-    ptsrc  = [domain.signal(width=ttag_w, reset_value=0, name=f"{prefix}_ts_{e}") for e in range(n_entries)]
-    trdy   = [domain.signal(width=1, reset_value=0, name=f"{prefix}_tr_{e}") for e in range(n_entries)]
-    ptdst  = [domain.signal(width=ttag_w, reset_value=0, name=f"{prefix}_td_{e}") for e in range(n_entries)]
-    psdst  = [domain.signal(width=stag_w, reset_value=0, name=f"{prefix}_sd_{e}") for e in range(n_entries)]
+    valid = [
+        domain.signal(width=1, reset_value=0, name=f"{prefix}_v_{e}")
+        for e in range(n_entries)
+    ]
+    op = [
+        domain.signal(width=uop_w, reset_value=0, name=f"{prefix}_op_{e}")
+        for e in range(n_entries)
+    ]
+    age = [
+        domain.signal(width=age_w, reset_value=0, name=f"{prefix}_ag_{e}")
+        for e in range(n_entries)
+    ]
+    psrc = [
+        domain.signal(width=stag_w, reset_value=0, name=f"{prefix}_ps_{e}")
+        for e in range(n_entries)
+    ]
+    srdy = [
+        domain.signal(width=1, reset_value=0, name=f"{prefix}_sr_{e}")
+        for e in range(n_entries)
+    ]
+    ptsrc = [
+        domain.signal(width=ttag_w, reset_value=0, name=f"{prefix}_ts_{e}")
+        for e in range(n_entries)
+    ]
+    trdy = [
+        domain.signal(width=1, reset_value=0, name=f"{prefix}_tr_{e}")
+        for e in range(n_entries)
+    ]
+    ptdst = [
+        domain.signal(width=ttag_w, reset_value=0, name=f"{prefix}_td_{e}")
+        for e in range(n_entries)
+    ]
+    psdst = [
+        domain.signal(width=stag_w, reset_value=0, name=f"{prefix}_sd_{e}")
+        for e in range(n_entries)
+    ]
 
     age_ctr = domain.signal(width=age_w, reset_value=0, name=f"{prefix}_ac")
 
@@ -126,7 +172,9 @@ def mte_rs(
     n_v = cas(domain, m.const(0, width=eidx_w + 1), cycle=0)
     for e in range(n_entries):
         n_v = n_v + valid[e]
-    outs["full"] = n_v >= cas(domain, m.const(n_entries - n_dispatch, width=eidx_w + 1), cycle=0)
+    outs["full"] = n_v >= cas(
+        domain, m.const(n_entries - n_dispatch, width=eidx_w + 1), cycle=0
+    )
 
     if inputs is None:
         for k in outs:
@@ -138,7 +186,11 @@ def mte_rs(
     age_ctr <<= (age_ctr + cas(domain, m.const(1, width=age_w), cycle=0)).trunc(age_w)
 
     for e in range(n_entries):
-        issued = best_v & (best_i == cas(domain, m.const(e, width=eidx_w), cycle=0)) & (~flush)
+        issued = (
+            best_v
+            & (best_i == cas(domain, m.const(e, width=eidx_w), cycle=0))
+            & (~flush)
+        )
         srdy[e].assign(eff_srdy[e], when=valid[e] & (~issued))
         trdy[e].assign(eff_trdy[e], when=valid[e] & (~issued))
         valid[e].assign(cas(domain, m.const(0, width=1), cycle=0), when=issued | flush)
@@ -163,6 +215,18 @@ mte_rs.__pycircuit_name__ = "mte_rs"
 
 
 if __name__ == "__main__":
-    print(compile_cycle_aware(mte_rs, name="mte_rs", eager=True,
-                               n_entries=4, n_dispatch=2, n_cdb=2, n_tcb=2,
-                               stag_w=3, ttag_w=3, uop_w=4, age_w=3).emit_mlir())
+    print(
+        compile_cycle_aware(
+            mte_rs,
+            name="mte_rs",
+            eager=True,
+            n_entries=4,
+            n_dispatch=2,
+            n_cdb=2,
+            n_tcb=2,
+            stag_w=3,
+            ttag_w=3,
+            uop_w=4,
+            age_w=3,
+        ).emit_mlir()
+    )

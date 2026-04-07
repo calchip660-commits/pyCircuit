@@ -15,6 +15,7 @@ from pycircuit.tb import Tb
 
 def alu_test(m, domain) -> None:
     from designs.outerCube.davinci.backend.scalar_exu.alu import alu
+
     alu(m, domain, data_w=16, tag_w=4, prefix="alu0")
 
 

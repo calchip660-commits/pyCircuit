@@ -63,51 +63,95 @@ def rename(
     # ── Cycle 0: Inputs from decode ──────────────────────────────────
     instr_valid = [_in(inputs, f"valid{i}", m, domain, prefix, 1) for i in range(width)]
     has_srd = [_in(inputs, f"has_srd{i}", m, domain, prefix, 1) for i in range(width)]
-    has_srs1 = [_in(inputs, f"has_srs1_{i}", m, domain, prefix, 1) for i in range(width)]
-    has_srs2 = [_in(inputs, f"has_srs2_{i}", m, domain, prefix, 1) for i in range(width)]
-    srd_arch = [_in(inputs, f"srd{i}", m, domain, prefix, sarch_w) for i in range(width)]
-    srs1_arch = [_in(inputs, f"srs1_{i}", m, domain, prefix, sarch_w) for i in range(width)]
-    srs2_arch = [_in(inputs, f"srs2_{i}", m, domain, prefix, sarch_w) for i in range(width)]
+    has_srs1 = [
+        _in(inputs, f"has_srs1_{i}", m, domain, prefix, 1) for i in range(width)
+    ]
+    has_srs2 = [
+        _in(inputs, f"has_srs2_{i}", m, domain, prefix, 1) for i in range(width)
+    ]
+    srd_arch = [
+        _in(inputs, f"srd{i}", m, domain, prefix, sarch_w) for i in range(width)
+    ]
+    srs1_arch = [
+        _in(inputs, f"srs1_{i}", m, domain, prefix, sarch_w) for i in range(width)
+    ]
+    srs2_arch = [
+        _in(inputs, f"srs2_{i}", m, domain, prefix, sarch_w) for i in range(width)
+    ]
 
     has_trd = [_in(inputs, f"has_trd{i}", m, domain, prefix, 1) for i in range(width)]
     has_trs = [_in(inputs, f"has_trs{i}", m, domain, prefix, 1) for i in range(width)]
-    trd_arch = [_in(inputs, f"trd{i}", m, domain, prefix, tarch_w) for i in range(width)]
-    trs_arch = [_in(inputs, f"trs{i}", m, domain, prefix, tarch_w) for i in range(width)]
+    trd_arch = [
+        _in(inputs, f"trd{i}", m, domain, prefix, tarch_w) for i in range(width)
+    ]
+    trs_arch = [
+        _in(inputs, f"trs{i}", m, domain, prefix, tarch_w) for i in range(width)
+    ]
 
-    is_branch = [_in(inputs, f"is_branch{i}", m, domain, prefix, 1) for i in range(width)]
+    is_branch = [
+        _in(inputs, f"is_branch{i}", m, domain, prefix, 1) for i in range(width)
+    ]
 
     # Free list inputs
-    sfl_tag = [_in(inputs, f"sfl_tag{i}", m, domain, prefix, sphys_w) for i in range(width)]
-    tfl_tag = [_in(inputs, f"tfl_tag{i}", m, domain, prefix, tphys_w) for i in range(width)]
+    sfl_tag = [
+        _in(inputs, f"sfl_tag{i}", m, domain, prefix, sphys_w) for i in range(width)
+    ]
+    tfl_tag = [
+        _in(inputs, f"tfl_tag{i}", m, domain, prefix, tphys_w) for i in range(width)
+    ]
 
     # CDB/TCB writeback (mark ready)
     cdb_valid = [_in(inputs, f"cdb_v{i}", m, domain, prefix, 1) for i in range(n_cdb)]
-    cdb_tag = [_in(inputs, f"cdb_t{i}", m, domain, prefix, sphys_w) for i in range(n_cdb)]
+    cdb_tag = [
+        _in(inputs, f"cdb_t{i}", m, domain, prefix, sphys_w) for i in range(n_cdb)
+    ]
     tcb_valid = [_in(inputs, f"tcb_v{i}", m, domain, prefix, 1) for i in range(n_tcb)]
-    tcb_tag = [_in(inputs, f"tcb_t{i}", m, domain, prefix, tphys_w) for i in range(n_tcb)]
+    tcb_tag = [
+        _in(inputs, f"tcb_t{i}", m, domain, prefix, tphys_w) for i in range(n_tcb)
+    ]
 
     # Mispredict restore
     restore = _in(inputs, "restore", m, domain, prefix, 1)
     restore_ckpt = _in(inputs, "restore_ckpt", m, domain, prefix, ckpt_w)
 
     # ── Scalar RAT state ─────────────────────────────────────────────
-    srat_map = [domain.signal(width=sphys_w, reset_value=i, name=f"{prefix}_sm_{i}")
-                for i in range(n_sarch)]
-    srat_rdy = [domain.signal(width=1, reset_value=1, name=f"{prefix}_sr_{i}")
-                for i in range(n_sarch)]
+    srat_map = [
+        domain.signal(width=sphys_w, reset_value=i, name=f"{prefix}_sm_{i}")
+        for i in range(n_sarch)
+    ]
+    srat_rdy = [
+        domain.signal(width=1, reset_value=1, name=f"{prefix}_sr_{i}")
+        for i in range(n_sarch)
+    ]
 
     # ── Tile RAT state ───────────────────────────────────────────────
-    trat_map = [domain.signal(width=tphys_w, reset_value=i, name=f"{prefix}_tm_{i}")
-                for i in range(n_tarch)]
-    trat_rdy = [domain.signal(width=1, reset_value=1, name=f"{prefix}_tr_{i}")
-                for i in range(n_tarch)]
+    trat_map = [
+        domain.signal(width=tphys_w, reset_value=i, name=f"{prefix}_tm_{i}")
+        for i in range(n_tarch)
+    ]
+    trat_rdy = [
+        domain.signal(width=1, reset_value=1, name=f"{prefix}_tr_{i}")
+        for i in range(n_tarch)
+    ]
 
     # ── Checkpoint store ─────────────────────────────────────────────
-    ckpt_srat = [[domain.signal(width=sphys_w, reset_value=a, name=f"{prefix}_cs_{s}_{a}")
-                  for a in range(n_sarch)] for s in range(n_ckpt)]
-    ckpt_trat = [[domain.signal(width=tphys_w, reset_value=a, name=f"{prefix}_ct_{s}_{a}")
-                  for a in range(n_tarch)] for s in range(n_ckpt)]
-    ckpt_alloc_ptr = domain.signal(width=ckpt_w, reset_value=0, name=f"{prefix}_ckpt_ptr")
+    ckpt_srat = [
+        [
+            domain.signal(width=sphys_w, reset_value=a, name=f"{prefix}_cs_{s}_{a}")
+            for a in range(n_sarch)
+        ]
+        for s in range(n_ckpt)
+    ]
+    ckpt_trat = [
+        [
+            domain.signal(width=tphys_w, reset_value=a, name=f"{prefix}_ct_{s}_{a}")
+            for a in range(n_tarch)
+        ]
+        for s in range(n_ckpt)
+    ]
+    ckpt_alloc_ptr = domain.signal(
+        width=ckpt_w, reset_value=0, name=f"{prefix}_ckpt_ptr"
+    )
 
     # ── Combinational: rename each slot with intra-group bypass ──────
     out_psrc1 = []
@@ -158,17 +202,27 @@ def rename(
             pts = mux(bp_ts, out_ptdst[j] if j < len(out_ptdst) else pts, pts)
             pts_rdy = mux(bp_ts, cas(domain, m.const(0, width=1), cycle=0), pts_rdy)
 
-        pd = mux(has_srd[i], sfl_tag[i], cas(domain, m.const(0, width=sphys_w), cycle=0))
-        ptd = mux(has_trd[i], tfl_tag[i], cas(domain, m.const(0, width=tphys_w), cycle=0))
+        pd = mux(
+            has_srd[i], sfl_tag[i], cas(domain, m.const(0, width=sphys_w), cycle=0)
+        )
+        ptd = mux(
+            has_trd[i], tfl_tag[i], cas(domain, m.const(0, width=tphys_w), cycle=0)
+        )
 
         out_psrc1.append(ps1)
         out_psrc2.append(ps2)
         out_pdst.append(pd)
-        out_src1_rdy.append(mux(has_srs1[i], ps1_rdy, cas(domain, m.const(1, width=1), cycle=0)))
-        out_src2_rdy.append(mux(has_srs2[i], ps2_rdy, cas(domain, m.const(1, width=1), cycle=0)))
+        out_src1_rdy.append(
+            mux(has_srs1[i], ps1_rdy, cas(domain, m.const(1, width=1), cycle=0))
+        )
+        out_src2_rdy.append(
+            mux(has_srs2[i], ps2_rdy, cas(domain, m.const(1, width=1), cycle=0))
+        )
         out_ptsrc.append(pts)
         out_ptdst.append(ptd)
-        out_tsrc_rdy.append(mux(has_trs[i], pts_rdy, cas(domain, m.const(1, width=1), cycle=0)))
+        out_tsrc_rdy.append(
+            mux(has_trs[i], pts_rdy, cas(domain, m.const(1, width=1), cycle=0))
+        )
 
     # ── Outputs ──────────────────────────────────────────────────────
     any_branch = cas(domain, m.const(0, width=1), cycle=0)
@@ -195,7 +249,12 @@ def rename(
     for i in range(width):
         d = srd_arch[i]
         for a in range(n_sarch):
-            hit = instr_valid[i] & has_srd[i] & (d == cas(domain, m.const(a, width=sarch_w), cycle=0)) & (~restore)
+            hit = (
+                instr_valid[i]
+                & has_srd[i]
+                & (d == cas(domain, m.const(a, width=sarch_w), cycle=0))
+                & (~restore)
+            )
             srat_map[a].assign(out_pdst[i], when=hit)
             srat_rdy[a].assign(cas(domain, m.const(0, width=1), cycle=0), when=hit)
 
@@ -203,7 +262,12 @@ def rename(
     for i in range(width):
         d = trd_arch[i]
         for a in range(n_tarch):
-            hit = instr_valid[i] & has_trd[i] & (d == cas(domain, m.const(a, width=tarch_w), cycle=0)) & (~restore)
+            hit = (
+                instr_valid[i]
+                & has_trd[i]
+                & (d == cas(domain, m.const(a, width=tarch_w), cycle=0))
+                & (~restore)
+            )
             trat_map[a].assign(out_ptdst[i], when=hit)
             trat_rdy[a].assign(cas(domain, m.const(0, width=1), cycle=0), when=hit)
 
@@ -221,18 +285,26 @@ def rename(
 
     # Checkpoint: save on branch
     for s in range(n_ckpt):
-        save = any_branch & (ckpt_alloc_ptr == cas(domain, m.const(s, width=ckpt_w), cycle=0))
+        save = any_branch & (
+            ckpt_alloc_ptr == cas(domain, m.const(s, width=ckpt_w), cycle=0)
+        )
         for a in range(n_sarch):
             ckpt_srat[s][a].assign(srat_map[a], when=save)
         for a in range(n_tarch):
             ckpt_trat[s][a].assign(trat_map[a], when=save)
 
-    next_ckpt = mux(any_branch, (ckpt_alloc_ptr + cas(domain, m.const(1, width=ckpt_w), cycle=0)).trunc(ckpt_w), ckpt_alloc_ptr)
+    next_ckpt = mux(
+        any_branch,
+        (ckpt_alloc_ptr + cas(domain, m.const(1, width=ckpt_w), cycle=0)).trunc(ckpt_w),
+        ckpt_alloc_ptr,
+    )
     ckpt_alloc_ptr <<= next_ckpt
 
     # Restore on mispredict
     for s in range(n_ckpt):
-        is_this = restore & (restore_ckpt == cas(domain, m.const(s, width=ckpt_w), cycle=0))
+        is_this = restore & (
+            restore_ckpt == cas(domain, m.const(s, width=ckpt_w), cycle=0)
+        )
         for a in range(n_sarch):
             srat_map[a].assign(ckpt_srat[s][a], when=is_this)
             srat_rdy[a].assign(cas(domain, m.const(1, width=1), cycle=0), when=is_this)
@@ -258,7 +330,21 @@ rename.__pycircuit_name__ = "rename"
 
 
 if __name__ == "__main__":
-    print(compile_cycle_aware(rename, name="rename", eager=True,
-                               width=2, n_sarch=4, sarch_w=2, sphys_w=3,
-                               n_tarch=4, tarch_w=2, tphys_w=3,
-                               n_cdb=2, n_tcb=2, n_ckpt=2, ckpt_w=1).emit_mlir())
+    print(
+        compile_cycle_aware(
+            rename,
+            name="rename",
+            eager=True,
+            width=2,
+            n_sarch=4,
+            sarch_w=2,
+            sphys_w=3,
+            n_tarch=4,
+            tarch_w=2,
+            tphys_w=3,
+            n_cdb=2,
+            n_tcb=2,
+            n_ckpt=2,
+            ckpt_w=1,
+        ).emit_mlir()
+    )

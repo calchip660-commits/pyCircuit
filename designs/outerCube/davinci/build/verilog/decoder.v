@@ -475,4 +475,3 @@ assign decoder_has_trs3 = pyc_comb_167;
 assign decoder_out_valid3 = decoder_valid3;
 
 endmodule
-

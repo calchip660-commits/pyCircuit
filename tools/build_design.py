@@ -13,6 +13,7 @@ Example:
         --kwargs ptag_count=32 const_count=8 nr=4 nw=2 \\
         --out-dir designs/RegisterFile/build
 """
+
 from __future__ import annotations
 
 import argparse
@@ -50,14 +51,26 @@ def stamp_metadata(circuit, name: str, params_json: str = "{}") -> None:
     circuit.set_func_attr("pyc.inline", "false")
     circuit.set_func_attr("pyc.params", params_json)
     circuit.set_func_attr("pyc.base", name)
-    metrics = json.dumps({
-        "ast_node_count": 0, "collection_count": 0,
-        "collection_instance_count": 0, "estimated_inline_cost": 0,
-        "hardware_call_count": 0, "instance_count": 0, "loop_count": 0,
-        "module_call_count": 0, "module_family_collection_count": 0,
-        "repeat_pressure": 0, "repeated_body_clusters": [],
-        "source_loc": 0, "state_alloc_count": 0, "state_call_count": 0,
-    }, sort_keys=True, separators=(",", ":"))
+    metrics = json.dumps(
+        {
+            "ast_node_count": 0,
+            "collection_count": 0,
+            "collection_instance_count": 0,
+            "estimated_inline_cost": 0,
+            "hardware_call_count": 0,
+            "instance_count": 0,
+            "loop_count": 0,
+            "module_call_count": 0,
+            "module_family_collection_count": 0,
+            "repeat_pressure": 0,
+            "repeated_body_clusters": [],
+            "source_loc": 0,
+            "state_alloc_count": 0,
+            "state_call_count": 0,
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    )
     circuit.set_func_attr("pyc.struct.metrics", metrics)
     circuit.set_func_attr("pyc.struct.collections", "[]")
     circuit.set_func_attr_json("pyc.value_params", [])
@@ -67,7 +80,7 @@ def stamp_metadata(circuit, name: str, params_json: str = "{}") -> None:
 def wrap_module_attrs(mlir: str, top_name: str) -> str:
     return mlir.replace(
         "module {\n",
-        f'module attributes {{pyc.top = @{top_name}, '
+        f"module attributes {{pyc.top = @{top_name}, "
         f'pyc.frontend.contract = "pycircuit"}} {{\n',
         1,
     )
@@ -105,7 +118,8 @@ def compile_and_build(
     verilog_dir.mkdir(parents=True, exist_ok=True)
 
     cmd = [
-        str(pycc), str(mlir_path),
+        str(pycc),
+        str(mlir_path),
         "--emit=verilog",
         f"--out-dir={verilog_dir}",
         f"--logic-depth={logic_depth}",
@@ -133,13 +147,17 @@ def compile_and_build(
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Build a PyCircuit V5 design")
-    parser.add_argument("module_path", help="Python module path (e.g. designs.examples.counter.counter)")
+    parser.add_argument(
+        "module_path", help="Python module path (e.g. designs.examples.counter.counter)"
+    )
     parser.add_argument("fn_name", help="Build function name")
     parser.add_argument("name", help="Design name")
     parser.add_argument("--kwargs", nargs="*", default=[], help="KEY=VAL pairs")
     parser.add_argument("--out-dir", required=True, help="Output directory")
     parser.add_argument("--logic-depth", type=int, default=256)
-    parser.add_argument("--flat", action="store_true", help="Use flat mode instead of hierarchical")
+    parser.add_argument(
+        "--flat", action="store_true", help="Use flat mode instead of hierarchical"
+    )
     args = parser.parse_args()
 
     kwargs = {}
@@ -156,8 +174,12 @@ def main() -> int:
     out_dir = Path(args.out_dir)
     print(f"Building {args.name} from {args.module_path}::{args.fn_name}")
     ok = compile_and_build(
-        args.module_path, args.fn_name, args.name,
-        kwargs, out_dir, args.logic_depth,
+        args.module_path,
+        args.fn_name,
+        args.name,
+        kwargs,
+        out_dir,
+        args.logic_depth,
         hierarchical=not args.flat,
     )
     return 0 if ok else 1

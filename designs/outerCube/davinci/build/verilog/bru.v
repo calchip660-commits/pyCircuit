@@ -126,4 +126,3 @@ assign bru_result_data = pyc_comb_43;
 assign bru_dealloc_valid = pyc_comb_45;
 
 endmodule
-

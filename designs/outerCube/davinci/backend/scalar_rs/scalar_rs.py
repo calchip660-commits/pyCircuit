@@ -37,7 +37,6 @@ def _in(io, key, m, domain, prefix, width):
     return cas(domain, m.input(f"{prefix}_{key}", width=width), cycle=0)
 
 
-
 def scalar_rs(
     m: CycleAwareCircuit,
     domain: CycleAwareDomain,
@@ -57,37 +56,102 @@ def scalar_rs(
     entry_idx_w = max(1, (n_entries - 1).bit_length())
 
     # ── Cycle 0: Dispatch inputs (up to n_dispatch per cycle) ────────
-    disp_valid = [_in(inputs, f"disp_valid{i}", m, domain, prefix, 1) for i in range(n_dispatch)]
-    disp_op = [_in(inputs, f"disp_op{i}", m, domain, prefix, uop_w) for i in range(n_dispatch)]
-    disp_psrc1 = [_in(inputs, f"disp_psrc1_{i}", m, domain, prefix, tag_w) for i in range(n_dispatch)]
-    disp_rdy1 = [_in(inputs, f"disp_rdy1_{i}", m, domain, prefix, 1) for i in range(n_dispatch)]
-    disp_data1 = [_in(inputs, f"disp_data1_{i}", m, domain, prefix, data_w) for i in range(n_dispatch)]
-    disp_psrc2 = [_in(inputs, f"disp_psrc2_{i}", m, domain, prefix, tag_w) for i in range(n_dispatch)]
-    disp_rdy2 = [_in(inputs, f"disp_rdy2_{i}", m, domain, prefix, 1) for i in range(n_dispatch)]
-    disp_data2 = [_in(inputs, f"disp_data2_{i}", m, domain, prefix, data_w) for i in range(n_dispatch)]
-    disp_pdst = [_in(inputs, f"disp_pdst{i}", m, domain, prefix, tag_w) for i in range(n_dispatch)]
-    disp_ckpt = [_in(inputs, f"disp_ckpt{i}", m, domain, prefix, ckpt_w) for i in range(n_dispatch)]
+    disp_valid = [
+        _in(inputs, f"disp_valid{i}", m, domain, prefix, 1) for i in range(n_dispatch)
+    ]
+    disp_op = [
+        _in(inputs, f"disp_op{i}", m, domain, prefix, uop_w) for i in range(n_dispatch)
+    ]
+    disp_psrc1 = [
+        _in(inputs, f"disp_psrc1_{i}", m, domain, prefix, tag_w)
+        for i in range(n_dispatch)
+    ]
+    disp_rdy1 = [
+        _in(inputs, f"disp_rdy1_{i}", m, domain, prefix, 1) for i in range(n_dispatch)
+    ]
+    disp_data1 = [
+        _in(inputs, f"disp_data1_{i}", m, domain, prefix, data_w)
+        for i in range(n_dispatch)
+    ]
+    disp_psrc2 = [
+        _in(inputs, f"disp_psrc2_{i}", m, domain, prefix, tag_w)
+        for i in range(n_dispatch)
+    ]
+    disp_rdy2 = [
+        _in(inputs, f"disp_rdy2_{i}", m, domain, prefix, 1) for i in range(n_dispatch)
+    ]
+    disp_data2 = [
+        _in(inputs, f"disp_data2_{i}", m, domain, prefix, data_w)
+        for i in range(n_dispatch)
+    ]
+    disp_pdst = [
+        _in(inputs, f"disp_pdst{i}", m, domain, prefix, tag_w)
+        for i in range(n_dispatch)
+    ]
+    disp_ckpt = [
+        _in(inputs, f"disp_ckpt{i}", m, domain, prefix, ckpt_w)
+        for i in range(n_dispatch)
+    ]
 
     # CDB broadcast
-    cdb_valid = [_in(inputs, f"cdb_valid{i}", m, domain, prefix, 1) for i in range(n_cdb)]
-    cdb_tag = [_in(inputs, f"cdb_tag{i}", m, domain, prefix, tag_w) for i in range(n_cdb)]
-    cdb_data = [_in(inputs, f"cdb_data{i}", m, domain, prefix, data_w) for i in range(n_cdb)]
+    cdb_valid = [
+        _in(inputs, f"cdb_valid{i}", m, domain, prefix, 1) for i in range(n_cdb)
+    ]
+    cdb_tag = [
+        _in(inputs, f"cdb_tag{i}", m, domain, prefix, tag_w) for i in range(n_cdb)
+    ]
+    cdb_data = [
+        _in(inputs, f"cdb_data{i}", m, domain, prefix, data_w) for i in range(n_cdb)
+    ]
 
     # Flush (mispredict)
     flush = _in(inputs, "flush", m, domain, prefix, 1)
 
     # ── State: RS entries ────────────────────────────────────────────
-    valid  = [domain.signal(width=1, reset_value=0, name=f"{prefix}_v_{e}") for e in range(n_entries)]
-    op     = [domain.signal(width=uop_w, reset_value=0, name=f"{prefix}_op_{e}") for e in range(n_entries)]
-    age    = [domain.signal(width=age_w, reset_value=0, name=f"{prefix}_age_{e}") for e in range(n_entries)]
-    psrc1  = [domain.signal(width=tag_w, reset_value=0, name=f"{prefix}_ps1_{e}") for e in range(n_entries)]
-    rdy1   = [domain.signal(width=1, reset_value=0, name=f"{prefix}_r1_{e}") for e in range(n_entries)]
-    data1  = [domain.signal(width=data_w, reset_value=0, name=f"{prefix}_d1_{e}") for e in range(n_entries)]
-    psrc2  = [domain.signal(width=tag_w, reset_value=0, name=f"{prefix}_ps2_{e}") for e in range(n_entries)]
-    rdy2   = [domain.signal(width=1, reset_value=0, name=f"{prefix}_r2_{e}") for e in range(n_entries)]
-    data2  = [domain.signal(width=data_w, reset_value=0, name=f"{prefix}_d2_{e}") for e in range(n_entries)]
-    pdst   = [domain.signal(width=tag_w, reset_value=0, name=f"{prefix}_pd_{e}") for e in range(n_entries)]
-    ckpt   = [domain.signal(width=ckpt_w, reset_value=0, name=f"{prefix}_ck_{e}") for e in range(n_entries)]
+    valid = [
+        domain.signal(width=1, reset_value=0, name=f"{prefix}_v_{e}")
+        for e in range(n_entries)
+    ]
+    op = [
+        domain.signal(width=uop_w, reset_value=0, name=f"{prefix}_op_{e}")
+        for e in range(n_entries)
+    ]
+    age = [
+        domain.signal(width=age_w, reset_value=0, name=f"{prefix}_age_{e}")
+        for e in range(n_entries)
+    ]
+    psrc1 = [
+        domain.signal(width=tag_w, reset_value=0, name=f"{prefix}_ps1_{e}")
+        for e in range(n_entries)
+    ]
+    rdy1 = [
+        domain.signal(width=1, reset_value=0, name=f"{prefix}_r1_{e}")
+        for e in range(n_entries)
+    ]
+    data1 = [
+        domain.signal(width=data_w, reset_value=0, name=f"{prefix}_d1_{e}")
+        for e in range(n_entries)
+    ]
+    psrc2 = [
+        domain.signal(width=tag_w, reset_value=0, name=f"{prefix}_ps2_{e}")
+        for e in range(n_entries)
+    ]
+    rdy2 = [
+        domain.signal(width=1, reset_value=0, name=f"{prefix}_r2_{e}")
+        for e in range(n_entries)
+    ]
+    data2 = [
+        domain.signal(width=data_w, reset_value=0, name=f"{prefix}_d2_{e}")
+        for e in range(n_entries)
+    ]
+    pdst = [
+        domain.signal(width=tag_w, reset_value=0, name=f"{prefix}_pd_{e}")
+        for e in range(n_entries)
+    ]
+    ckpt = [
+        domain.signal(width=ckpt_w, reset_value=0, name=f"{prefix}_ck_{e}")
+        for e in range(n_entries)
+    ]
 
     age_counter = domain.signal(width=age_w, reset_value=0, name=f"{prefix}_age_ctr")
 
@@ -125,8 +189,10 @@ def scalar_rs(
         is_older = age[e] < best_age
         wins = is_ready & (is_older | (~best_valid))
         best_valid = mux(wins, cas(domain, m.const(1, width=1), cycle=0), best_valid)
-        best_idx   = mux(wins, cas(domain, m.const(e, width=entry_idx_w), cycle=0), best_idx)
-        best_age   = mux(wins, age[e], best_age)
+        best_idx = mux(
+            wins, cas(domain, m.const(e, width=entry_idx_w), cycle=0), best_idx
+        )
+        best_age = mux(wins, age[e], best_age)
 
     # Issue data outputs
     issue_op = op[0]
@@ -173,7 +239,9 @@ def scalar_rs(
     domain.next()
 
     # Advance age counter
-    next_age = (age_counter + cas(domain, m.const(1, width=age_w), cycle=0)).trunc(age_w)
+    next_age = (age_counter + cas(domain, m.const(1, width=age_w), cycle=0)).trunc(
+        age_w
+    )
     age_counter <<= next_age
 
     # Find first free slots for dispatch
@@ -206,7 +274,9 @@ def scalar_rs(
             slot_free = ~valid[e]
             dtag = cas(domain, m.const(d, width=entry_idx_w), cycle=0)
             is_this_disp = disp_valid[d] & slot_free & (allocated == dtag)
-            valid[e].assign(cas(domain, m.const(1, width=1), cycle=0), when=is_this_disp)
+            valid[e].assign(
+                cas(domain, m.const(1, width=1), cycle=0), when=is_this_disp
+            )
             op[e].assign(disp_op[d], when=is_this_disp)
             age[e].assign(age_counter, when=is_this_disp)
             psrc1[e].assign(disp_psrc1[d], when=is_this_disp)
@@ -225,6 +295,16 @@ scalar_rs.__pycircuit_name__ = "scalar_rs"
 
 
 if __name__ == "__main__":
-    print(compile_cycle_aware(scalar_rs, name="scalar_rs", eager=True,
-                               n_entries=4, n_dispatch=2, n_issue=1, n_cdb=2,
-                               data_w=8, prefix="srs").emit_mlir())
+    print(
+        compile_cycle_aware(
+            scalar_rs,
+            name="scalar_rs",
+            eager=True,
+            n_entries=4,
+            n_dispatch=2,
+            n_issue=1,
+            n_cdb=2,
+            data_w=8,
+            prefix="srs",
+        ).emit_mlir()
+    )

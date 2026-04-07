@@ -1,6 +1,13 @@
 from __future__ import annotations
 
-from pycircuit import CycleAwareCircuit, CycleAwareDomain, cas, compile_cycle_aware, u, wire_of
+from pycircuit import (
+    CycleAwareCircuit,
+    CycleAwareDomain,
+    cas,
+    compile_cycle_aware,
+    u,
+    wire_of,
+)
 
 RULES = [
     {"mask": 0xF0, "match": 0x10, "op": 1, "len": 4},

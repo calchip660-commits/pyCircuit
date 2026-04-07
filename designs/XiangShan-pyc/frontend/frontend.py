@@ -21,6 +21,7 @@ Key features:
   F-FE-005  Backpressure: IBuffer full stalls IFU
   F-FE-006  Decoded uops output to backend dispatch
 """
+
 from __future__ import annotations
 
 import sys
@@ -81,25 +82,26 @@ def frontend(
     _in = inputs or {}
     _out: dict[str, CycleAwareSignal] = {}
 
-
     # ── Sub-module calls ──
-    bpu_out = domain.call(bpu, inputs={}, prefix=f"{prefix}_s_bpu",
-                          pc_width=pc_width)
+    bpu_out = domain.call(bpu, inputs={}, prefix=f"{prefix}_s_bpu", pc_width=pc_width)
 
-    ftq_out = domain.call(ftq, inputs={}, prefix=f"{prefix}_s_ftq",
-                          pc_width=pc_width)
+    ftq_out = domain.call(ftq, inputs={}, prefix=f"{prefix}_s_ftq", pc_width=pc_width)
 
-    ic_out = domain.call(icache, inputs={}, prefix=f"{prefix}_s_ic",
-                         pc_width=pc_width)
+    ic_out = domain.call(icache, inputs={}, prefix=f"{prefix}_s_ic", pc_width=pc_width)
 
-    ifu_out = domain.call(ifu, inputs={}, prefix=f"{prefix}_s_ifu",
-                          pc_width=pc_width)
+    ifu_out = domain.call(ifu, inputs={}, prefix=f"{prefix}_s_ifu", pc_width=pc_width)
 
-    ibuf_out = domain.call(ibuffer, inputs={}, prefix=f"{prefix}_s_ibuf",
-                           deq_width=decode_width)
+    ibuf_out = domain.call(
+        ibuffer, inputs={}, prefix=f"{prefix}_s_ibuf", deq_width=decode_width
+    )
 
-    dec_out = domain.call(decode, inputs={}, prefix=f"{prefix}_s_dec",
-                          decode_width=decode_width, pc_width=pc_width)
+    dec_out = domain.call(
+        decode,
+        inputs={},
+        prefix=f"{prefix}_s_dec",
+        decode_width=decode_width,
+        pc_width=pc_width,
+    )
 
     pred_block_bytes = FETCH_BLOCK_SIZE
 
@@ -108,20 +110,35 @@ def frontend(
     # ================================================================
 
     # Backend redirect (highest priority)
-    redirect_valid = (_in["redirect_valid"] if "redirect_valid" in _in else
-        cas(domain, m.input(f"{prefix}_redirect_valid", width=1), cycle=0))
-    redirect_target = (_in["redirect_target"] if "redirect_target" in _in else
-        cas(domain, m.input(f"{prefix}_redirect_target", width=pc_width), cycle=0))
+    redirect_valid = (
+        _in["redirect_valid"]
+        if "redirect_valid" in _in
+        else cas(domain, m.input(f"{prefix}_redirect_valid", width=1), cycle=0)
+    )
+    redirect_target = (
+        _in["redirect_target"]
+        if "redirect_target" in _in
+        else cas(domain, m.input(f"{prefix}_redirect_target", width=pc_width), cycle=0)
+    )
 
     # Backpressure from IBuffer / decode
-    ibuf_ready = (_in["ibuf_ready"] if "ibuf_ready" in _in else
-        cas(domain, m.input(f"{prefix}_ibuf_ready", width=1), cycle=0))
+    ibuf_ready = (
+        _in["ibuf_ready"]
+        if "ibuf_ready" in _in
+        else cas(domain, m.input(f"{prefix}_ibuf_ready", width=1), cycle=0)
+    )
 
     # ICache refill interface (from L2)
-    refill_valid = (_in["refill_valid"] if "refill_valid" in _in else
-        cas(domain, m.input(f"{prefix}_refill_valid", width=1), cycle=0))
-    refill_data = (_in["refill_data"] if "refill_data" in _in else
-        cas(domain, m.input(f"{prefix}_refill_data", width=block_bits), cycle=0))
+    refill_valid = (
+        _in["refill_valid"]
+        if "refill_valid" in _in
+        else cas(domain, m.input(f"{prefix}_refill_valid", width=1), cycle=0)
+    )
+    refill_data = (
+        _in["refill_data"]
+        if "refill_data" in _in
+        else cas(domain, m.input(f"{prefix}_refill_data", width=block_bits), cycle=0)
+    )
 
     ZERO_1 = cas(domain, m.const(0, width=1), cycle=0)
     ONE_1 = cas(domain, m.const(1, width=1), cycle=0)
@@ -202,8 +219,10 @@ def frontend(
     # ── Pipeline registers: cycle 2 → cycle 3 ─────────────────────
     s3_valid_w = domain.cycle(s2_valid, name=f"{prefix}_s3_v")
     s3_pc_w = domain.cycle(s2_pc_w, name=f"{prefix}_s3_pc")
-    s3_insts_w = [domain.cycle(ifu_insts[i], name=f"{prefix}_s3_inst_{i}")
-                  for i in range(decode_width)]
+    s3_insts_w = [
+        domain.cycle(ifu_insts[i], name=f"{prefix}_s3_inst_{i}")
+        for i in range(decode_width)
+    ]
 
     domain.next()
 
@@ -236,8 +255,15 @@ frontend.__pycircuit_name__ = "frontend"
 
 
 if __name__ == "__main__":
-    print(compile_cycle_aware(
-        frontend, name="frontend", eager=True,
-        decode_width=2, pc_width=16, fetch_width=4,
-        inst_width=32, block_bits=128,
-    ).emit_mlir())
+    print(
+        compile_cycle_aware(
+            frontend,
+            name="frontend",
+            eager=True,
+            decode_width=2,
+            pc_width=16,
+            fetch_width=4,
+            inst_width=32,
+            block_bits=128,
+        ).emit_mlir()
+    )

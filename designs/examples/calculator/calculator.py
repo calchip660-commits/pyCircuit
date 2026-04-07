@@ -73,7 +73,11 @@ def build(m: CycleAwareCircuit, domain: CycleAwareDomain) -> None:
     result = (lhs_b + rhs_b) if (op_b == OP_ADD) else result
     result = (lhs_b - rhs_b) if (op_b == OP_SUB) else result
     result = (lhs_b * rhs_b) if (op_b == OP_MUL) else result
-    result = cas(domain, wire_of(lhs_b) // wire_of(rhs_safe), cycle=0) if (op_b == OP_DIV) else result
+    result = (
+        cas(domain, wire_of(lhs_b) // wire_of(rhs_safe), cycle=0)
+        if (op_b == OP_DIV)
+        else result
+    )
 
     lhs_c = result if is_eq else lhs_b
     rhs_c = 0 if is_eq else rhs_b

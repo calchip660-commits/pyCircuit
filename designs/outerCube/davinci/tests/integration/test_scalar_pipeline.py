@@ -20,6 +20,7 @@ from pycircuit.tb import Tb
 def test_davinci_top_compile():
     """davinci_top compiles to valid MLIR with full pipeline."""
     from designs.outerCube.davinci.davinci_top import davinci_top
+
     circuit = compile_cycle_aware(davinci_top, eager=True, name="davinci_top")
     mlir = circuit.emit_mlir()
     assert "func.func @davinci_top" in mlir
@@ -41,7 +42,7 @@ def test_scalar_pipeline_tb():
     # Cycle 0: provide an ADD instruction (opcode=0110011, funct3=000, funct7=0000000)
     # Encoding: funct7[31:25]=0000000 rs2[24:20]=00010 rs1[19:15]=00001
     #           funct3[14:12]=000 rd[11:7]=00011 opcode[6:0]=0110011
-    add_instr = (0b0000000_00010_00001_000_00011_0110011)
+    add_instr = 0b0000000_00010_00001_000_00011_0110011
     ct.drive("dv_icache_data0", add_instr)
     ct.drive("dv_icache_data1", 0)
     ct.drive("dv_icache_data2", 0)

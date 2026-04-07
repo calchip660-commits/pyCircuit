@@ -10,6 +10,7 @@ foundry SRAM macro without touching this file.
 
 See designs/outerCube/tregfile4k.md for the full architectural specification.
 """
+
 from __future__ import annotations
 
 from pycircuit import (
@@ -23,10 +24,16 @@ from pycircuit import (
 )
 
 from .parameters import (
-    NUM_BANKS, BANKS_PER_GROUP, NUM_GROUPS,
-    NUM_READ_PORTS, NUM_WRITE_PORTS, CALENDAR_LEN,
-    TEST_BANK_DEPTH, TEST_BANK_WIDTH,
-    tile_idx_width, port_data_width,
+    NUM_BANKS,
+    BANKS_PER_GROUP,
+    NUM_GROUPS,
+    NUM_READ_PORTS,
+    NUM_WRITE_PORTS,
+    CALENDAR_LEN,
+    TEST_BANK_DEPTH,
+    TEST_BANK_WIDTH,
+    tile_idx_width,
+    port_data_width,
 )
 from .sram_bank import sram_bank
 
@@ -86,8 +93,7 @@ def tregfile(
         for p in range(NWP)
     ]
     w_en = [
-        cas(domain, m.input(f"{prefix}_w{p}_en", width=1), cycle=0)
-        for p in range(NWP)
+        cas(domain, m.input(f"{prefix}_w{p}_en", width=1), cycle=0) for p in range(NWP)
     ]
     w_data = [
         cas(domain, m.input(f"{prefix}_w{p}_data", width=pdata_w), cycle=0)
@@ -117,14 +123,8 @@ def tregfile(
         for p in range(NWP)
     ]
 
-    r_addr = [
-        mux(epoch_eq[0], r_tidx[p], r_latch[p])
-        for p in range(NRP)
-    ]
-    w_addr = [
-        mux(epoch_eq[0], w_tidx[p], w_latch[p])
-        for p in range(NWP)
-    ]
+    r_addr = [mux(epoch_eq[0], r_tidx[p], r_latch[p]) for p in range(NRP)]
+    w_addr = [mux(epoch_eq[0], w_tidx[p], w_latch[p]) for p in range(NWP)]
 
     # ==================================================================
     # Per-group read / write signal selection via calendar
@@ -158,7 +158,8 @@ def tregfile(
         hi = lo + bank_width
 
         rd, commit = sram_bank(
-            m, domain,
+            m,
+            domain,
             depth=bank_depth,
             width=bank_width,
             prefix=f"{prefix}_bank{b}",
@@ -232,7 +233,10 @@ tregfile.__pycircuit_name__ = "tregfile"
 
 if __name__ == "__main__":
     circuit = compile_cycle_aware(
-tregfile, name="tregfile", eager=True,
-        bank_depth=TEST_BANK_DEPTH, bank_width=TEST_BANK_WIDTH,
+        tregfile,
+        name="tregfile",
+        eager=True,
+        bank_depth=TEST_BANK_DEPTH,
+        bank_width=TEST_BANK_WIDTH,
     )
     print(circuit.emit_mlir())

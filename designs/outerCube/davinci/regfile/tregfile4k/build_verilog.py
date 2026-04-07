@@ -6,6 +6,7 @@ Usage:
     python build_verilog.py --full          # full-size build (1 MB TRegFile)
     python build_verilog.py --mlir-only     # emit MLIR only, skip pycc
 """
+
 from __future__ import annotations
 
 import argparse
@@ -49,14 +50,26 @@ def _stamp_pycc_metadata(m: Any, name: str, params_json: str = "{}") -> None:
     m.set_func_attr("pyc.inline", "false")
     m.set_func_attr("pyc.params", params_json)
     m.set_func_attr("pyc.base", name)
-    metrics = json.dumps({
-        "ast_node_count": 0, "collection_count": 0,
-        "collection_instance_count": 0, "estimated_inline_cost": 0,
-        "hardware_call_count": 0, "instance_count": 0, "loop_count": 0,
-        "module_call_count": 0, "module_family_collection_count": 0,
-        "repeat_pressure": 0, "repeated_body_clusters": [],
-        "source_loc": 0, "state_alloc_count": 0, "state_call_count": 0,
-    }, sort_keys=True, separators=(",", ":"))
+    metrics = json.dumps(
+        {
+            "ast_node_count": 0,
+            "collection_count": 0,
+            "collection_instance_count": 0,
+            "estimated_inline_cost": 0,
+            "hardware_call_count": 0,
+            "instance_count": 0,
+            "loop_count": 0,
+            "module_call_count": 0,
+            "module_family_collection_count": 0,
+            "repeat_pressure": 0,
+            "repeated_body_clusters": [],
+            "source_loc": 0,
+            "state_alloc_count": 0,
+            "state_call_count": 0,
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    )
     m.set_func_attr("pyc.struct.metrics", metrics)
     m.set_func_attr("pyc.struct.collections", "[]")
     m.set_func_attr_json("pyc.value_params", [])
@@ -88,14 +101,18 @@ def run_pycc(pycc: Path, pyc_path: Path, verilog_dir: Path, *, name: str) -> Pat
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Build TRegFile-4K Verilog (8R8W, 64 banks)")
+    parser = argparse.ArgumentParser(
+        description="Build TRegFile-4K Verilog (8R8W, 64 banks)"
+    )
     parser.add_argument("--full", action="store_true", help="Full-size build (1 MB)")
     parser.add_argument("--mlir-only", action="store_true", help="Emit MLIR only")
     args = parser.parse_args()
 
     from parameters import (
-        FULL_BANK_DEPTH, FULL_BANK_WIDTH,
-        TEST_BANK_DEPTH, TEST_BANK_WIDTH,
+        FULL_BANK_DEPTH,
+        FULL_BANK_WIDTH,
+        TEST_BANK_DEPTH,
+        TEST_BANK_WIDTH,
     )
     from pycircuit import compile_cycle_aware
     from tregfile import tregfile
@@ -108,7 +125,9 @@ def main() -> int:
         kwargs = {"bank_depth": TEST_BANK_DEPTH, "bank_width": TEST_BANK_WIDTH}
         out_dir = THIS_DIR / "build_out"
 
-    print(f"[tregfile] Compiling ({', '.join(f'{k}={v}' for k, v in kwargs.items())}) ...")
+    print(
+        f"[tregfile] Compiling ({', '.join(f'{k}={v}' for k, v in kwargs.items())}) ..."
+    )
     t0 = time.time()
 
     params_json = json.dumps(kwargs, sort_keys=True, separators=(",", ":"))
@@ -137,7 +156,9 @@ def main() -> int:
 
     pycc = find_pycc()
     if pycc is None:
-        print("  [info] pycc not found — MLIR only. Set PYCC=<path> for Verilog output.")
+        print(
+            "  [info] pycc not found — MLIR only. Set PYCC=<path> for Verilog output."
+        )
         return 0
 
     verilog_dir = out_dir / "verilog" / name

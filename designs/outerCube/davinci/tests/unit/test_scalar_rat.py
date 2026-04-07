@@ -15,6 +15,7 @@ from pycircuit.tb import Tb
 
 def srat_test(m, domain) -> None:
     from designs.outerCube.davinci.frontend.rename.scalar_rat import scalar_rat
+
     scalar_rat(m, domain, n_arch=8, arch_w=3, phys_w=4, width=2, prefix="srat")
 
 

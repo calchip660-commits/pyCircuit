@@ -45,7 +45,9 @@ def decoder(
 ) -> dict:
     # ── Cycle 0: Inputs ──────────────────────────────────────────────
     instr_valid = [_in(inputs, f"valid{i}", m, domain, prefix, 1) for i in range(width)]
-    instr_bits = [_in(inputs, f"instr{i}", m, domain, prefix, INSTR_WIDTH) for i in range(width)]
+    instr_bits = [
+        _in(inputs, f"instr{i}", m, domain, prefix, INSTR_WIDTH) for i in range(width)
+    ]
 
     dec_opcode_list: list = []
     dec_rd_list: list = []
@@ -66,36 +68,43 @@ def decoder(
     for i in range(width):
         raw = instr_bits[i]
 
-        opcode  = raw[0:7]
-        rd      = raw[7:12]
-        funct3  = raw[12:15]
-        rs1     = raw[15:20]
-        rs2     = raw[20:25]
-        funct7  = raw[25:32]
+        opcode = raw[0:7]
+        rd = raw[7:12]
+        funct3 = raw[12:15]
+        rs1 = raw[15:20]
+        rs2 = raw[20:25]
+        funct7 = raw[25:32]
 
         domain_code = raw[5:7]
 
-        is_scalar = (domain_code == cas(domain, m.const(0b00, width=DOMAIN_W), cycle=0)) | \
-                     (domain_code == cas(domain, m.const(0b01, width=DOMAIN_W), cycle=0))
+        is_scalar = (
+            domain_code == cas(domain, m.const(0b00, width=DOMAIN_W), cycle=0)
+        ) | (domain_code == cas(domain, m.const(0b01, width=DOMAIN_W), cycle=0))
         is_vec_mte = domain_code == cas(domain, m.const(0b10, width=DOMAIN_W), cycle=0)
-        is_cube    = domain_code == cas(domain, m.const(0b11, width=DOMAIN_W), cycle=0)
+        is_cube = domain_code == cas(domain, m.const(0b11, width=DOMAIN_W), cycle=0)
 
         # Branch detection: BEQ/BNE/BLT/BGE/BLTU/BGEU share opcode[6:2]=11000
         branch_opcode = raw[2:7]
-        is_branch = is_scalar & (branch_opcode == cas(domain, m.const(0b11000, width=5), cycle=0))
-        is_jal    = is_scalar & (opcode == cas(domain, m.const(0b1101111, width=7), cycle=0))
-        is_jalr   = is_scalar & (opcode == cas(domain, m.const(0b1100111, width=7), cycle=0))
+        is_branch = is_scalar & (
+            branch_opcode == cas(domain, m.const(0b11000, width=5), cycle=0)
+        )
+        is_jal = is_scalar & (
+            opcode == cas(domain, m.const(0b1101111, width=7), cycle=0)
+        )
+        is_jalr = is_scalar & (
+            opcode == cas(domain, m.const(0b1100111, width=7), cycle=0)
+        )
         needs_checkpoint = is_branch | is_jal | is_jalr
 
         # TILE.MOVE detection (funct7 = 0100010, domain = 10)
         tile_move_funct7 = funct7 == cas(domain, m.const(0b0100010, width=7), cycle=0)
         is_tile_move = is_vec_mte & tile_move_funct7
 
-        has_scalar_rd  = is_scalar & instr_valid[i]
+        has_scalar_rd = is_scalar & instr_valid[i]
         has_scalar_rs1 = is_scalar & instr_valid[i]
         has_scalar_rs2 = is_scalar & instr_valid[i]
-        has_tile_rd    = (is_vec_mte | is_cube) & instr_valid[i] & (~is_tile_move)
-        has_tile_rs    = (is_vec_mte | is_cube) & instr_valid[i]
+        has_tile_rd = (is_vec_mte | is_cube) & instr_valid[i] & (~is_tile_move)
+        has_tile_rs = (is_vec_mte | is_cube) & instr_valid[i]
 
         dec_opcode_list.append(opcode)
         dec_rd_list.append(rd)
@@ -115,21 +124,21 @@ def decoder(
 
         # ── Outputs ──────────────────────────────────────────────────
         if inputs is None:
-            m.output(f"{prefix}_opcode{i}",     wire_of(opcode))
-            m.output(f"{prefix}_rd{i}",         wire_of(rd))
-            m.output(f"{prefix}_rs1_{i}",       wire_of(rs1))
-            m.output(f"{prefix}_rs2_{i}",       wire_of(rs2))
-            m.output(f"{prefix}_funct3_{i}",    wire_of(funct3))
-            m.output(f"{prefix}_funct7_{i}",    wire_of(funct7))
-            m.output(f"{prefix}_domain{i}",     wire_of(domain_code))
-            m.output(f"{prefix}_is_branch{i}",  wire_of(needs_checkpoint))
-            m.output(f"{prefix}_tile_move{i}",  wire_of(is_tile_move))
-            m.output(f"{prefix}_has_srd{i}",    wire_of(has_scalar_rd))
-            m.output(f"{prefix}_has_srs1_{i}",  wire_of(has_scalar_rs1))
-            m.output(f"{prefix}_has_srs2_{i}",  wire_of(has_scalar_rs2))
-            m.output(f"{prefix}_has_trd{i}",    wire_of(has_tile_rd))
-            m.output(f"{prefix}_has_trs{i}",    wire_of(has_tile_rs))
-            m.output(f"{prefix}_out_valid{i}",  wire_of(instr_valid[i]))
+            m.output(f"{prefix}_opcode{i}", wire_of(opcode))
+            m.output(f"{prefix}_rd{i}", wire_of(rd))
+            m.output(f"{prefix}_rs1_{i}", wire_of(rs1))
+            m.output(f"{prefix}_rs2_{i}", wire_of(rs2))
+            m.output(f"{prefix}_funct3_{i}", wire_of(funct3))
+            m.output(f"{prefix}_funct7_{i}", wire_of(funct7))
+            m.output(f"{prefix}_domain{i}", wire_of(domain_code))
+            m.output(f"{prefix}_is_branch{i}", wire_of(needs_checkpoint))
+            m.output(f"{prefix}_tile_move{i}", wire_of(is_tile_move))
+            m.output(f"{prefix}_has_srd{i}", wire_of(has_scalar_rd))
+            m.output(f"{prefix}_has_srs1_{i}", wire_of(has_scalar_rs1))
+            m.output(f"{prefix}_has_srs2_{i}", wire_of(has_scalar_rs2))
+            m.output(f"{prefix}_has_trd{i}", wire_of(has_tile_rd))
+            m.output(f"{prefix}_has_trs{i}", wire_of(has_tile_rs))
+            m.output(f"{prefix}_out_valid{i}", wire_of(instr_valid[i]))
 
     outs = {
         "opcode": dec_opcode_list,

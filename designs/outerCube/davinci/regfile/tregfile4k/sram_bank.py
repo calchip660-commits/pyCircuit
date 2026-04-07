@@ -17,6 +17,7 @@ Usage from parent module (V5 two-phase pattern):
     domain.next()
     commit()
 """
+
 from __future__ import annotations
 
 from typing import Callable
@@ -61,9 +62,7 @@ def sram_bank(
         for d in range(depth)
     ]
 
-    addr_consts = [
-        cas(domain, m.const(d, width=addr_w), cycle=0) for d in range(depth)
-    ]
+    addr_consts = [cas(domain, m.const(d, width=addr_w), cycle=0) for d in range(depth)]
 
     # ── Combinational read (cycle 0) ──
     zero = cas(domain, m.const(0, width=width), cycle=0)
@@ -83,6 +82,7 @@ def sram_bank(
 
 # ── Standalone compilation (for independent testing) ──
 
+
 def _sram_bank_top(
     m: CycleAwareCircuit,
     domain: CycleAwareDomain,
@@ -99,9 +99,15 @@ def _sram_bank_top(
     wr_data = cas(domain, m.input("wr_data", width=width), cycle=0)
 
     rd_data, commit = sram_bank(
-        m, domain,
-        depth=depth, width=width, prefix="mem",
-        rd_addr=rd_addr, wr_addr=wr_addr, wr_en=wr_en, wr_data=wr_data,
+        m,
+        domain,
+        depth=depth,
+        width=width,
+        prefix="mem",
+        rd_addr=rd_addr,
+        wr_addr=wr_addr,
+        wr_en=wr_en,
+        wr_data=wr_data,
     )
 
     m.output("rd_data", wire_of(rd_data))
@@ -115,7 +121,10 @@ _sram_bank_top.__pycircuit_name__ = "sram_bank"
 
 if __name__ == "__main__":
     circuit = compile_cycle_aware(
-        _sram_bank_top, name="sram_bank", eager=True,
-        depth=8, width=8,
+        _sram_bank_top,
+        name="sram_bank",
+        eager=True,
+        depth=8,
+        width=8,
     )
     print(circuit.emit_mlir())

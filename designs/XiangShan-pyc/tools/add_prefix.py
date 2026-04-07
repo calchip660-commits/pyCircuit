@@ -10,6 +10,7 @@ Transforms:
 
 Usage: python tools/add_prefix.py [--dry-run] [--file path]
 """
+
 from __future__ import annotations
 
 import argparse
@@ -68,7 +69,9 @@ PERIPHERALS_FUNCS = {
 }
 
 
-def transform_file(filepath: Path, default_prefix: str, *, dry_run: bool = False) -> dict:
+def transform_file(
+    filepath: Path, default_prefix: str, *, dry_run: bool = False
+) -> dict:
     """Transform a single file. Returns stats dict."""
     text = filepath.read_text()
     original = text
@@ -92,20 +95,25 @@ def transform_file(filepath: Path, default_prefix: str, *, dry_run: bool = False
         return stats
 
     if dry_run:
-        print(f"  DRY-RUN {filepath.relative_to(XS_ROOT)}: "
-              f"{sum(stats.values())} replacements")
+        print(
+            f"  DRY-RUN {filepath.relative_to(XS_ROOT)}: "
+            f"{sum(stats.values())} replacements"
+        )
     else:
         filepath.write_text(text)
-        print(f"  WRITE {filepath.relative_to(XS_ROOT)}: "
-              f"{sum(stats.values())} replacements "
-              f"(in={stats['input']}, out={stats['output']}, "
-              f"state={stats['state']}, cycle={stats['cycle']})")
+        print(
+            f"  WRITE {filepath.relative_to(XS_ROOT)}: "
+            f"{sum(stats.values())} replacements "
+            f"(in={stats['input']}, out={stats['output']}, "
+            f"state={stats['state']}, cycle={stats['cycle']})"
+        )
 
     return stats
 
 
-def _transform_function_in_text(text: str, func_name: str, prefix: str,
-                                 stats: dict) -> str:
+def _transform_function_in_text(
+    text: str, func_name: str, prefix: str, stats: dict
+) -> str:
     """Add prefix param and transform m.input/m.output/domain.signal/domain.cycle."""
 
     # 1) Add prefix parameter to function signature
@@ -119,7 +127,7 @@ def _transform_function_in_text(text: str, func_name: str, prefix: str,
         insertion = sig_match.group(1)
         indent = "    "
         new_sig = insertion + f'{indent}prefix: str = "{prefix}",\n'
-        text = text[:sig_match.start()] + new_sig + text[sig_match.end():]
+        text = text[: sig_match.start()] + new_sig + text[sig_match.end() :]
         stats["sig"] += 1
     else:
         sig_pattern2 = re.compile(
@@ -130,7 +138,7 @@ def _transform_function_in_text(text: str, func_name: str, prefix: str,
         if sig_match2:
             insertion = sig_match2.group(1)
             new_sig = insertion + f'prefix: str = "{prefix}", '
-            text = text[:sig_match2.start()] + new_sig + text[sig_match2.end():]
+            text = text[: sig_match2.start()] + new_sig + text[sig_match2.end() :]
             stats["sig"] += 1
 
     # Find the function body range (from def to next top-level statement)
@@ -198,10 +206,15 @@ def _transform_function_in_text(text: str, func_name: str, prefix: str,
 
 def main():
     parser = argparse.ArgumentParser(description="Add prefix to build_* functions")
-    parser.add_argument("--dry-run", action="store_true",
-                        help="Show changes without writing")
-    parser.add_argument("--file", type=str, default=None,
-                        help="Process a single file (relative to XiangShan-pyc/)")
+    parser.add_argument(
+        "--dry-run", action="store_true", help="Show changes without writing"
+    )
+    parser.add_argument(
+        "--file",
+        type=str,
+        default=None,
+        help="Process a single file (relative to XiangShan-pyc/)",
+    )
     args = parser.parse_args()
 
     total_stats = {"input": 0, "output": 0, "state": 0, "cycle": 0, "sig": 0}

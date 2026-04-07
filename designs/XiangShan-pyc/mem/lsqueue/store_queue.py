@@ -15,6 +15,7 @@ Key features:
   M-SQ-004  Commit marks entry ready for SBuffer drain
   M-SQ-005  Redirect/flush: roll back enqueue pointer
 """
+
 from __future__ import annotations
 
 import math
@@ -53,49 +54,79 @@ def store_queue(
     _in = inputs or {}
     _out: dict[str, CycleAwareSignal] = {}
 
-
     idx_w = max(1, math.ceil(math.log2(size)))
     ptr_w = idx_w + 1
 
     # ── Cycle 0: Inputs ──────────────────────────────────────────────
 
-    flush = (_in["flush"] if "flush" in _in else
+    flush = (
+        _in["flush"]
+        if "flush" in _in
+        else cas(domain, m.input(f"{prefix}_flush", width=1), cycle=0)
+    )
 
-        cas(domain, m.input(f"{prefix}_flush", width=1), cycle=0))
+    enq_valid = (
+        _in["enq_valid"]
+        if "enq_valid" in _in
+        else cas(domain, m.input(f"{prefix}_enq_valid", width=1), cycle=0)
+    )
+    enq_rob_idx = (
+        _in["enq_rob_idx"]
+        if "enq_rob_idx" in _in
+        else cas(domain, m.input(f"{prefix}_enq_rob_idx", width=rob_idx_width), cycle=0)
+    )
 
-    enq_valid = (_in["enq_valid"] if "enq_valid" in _in else
+    write_valid = (
+        _in["write_valid"]
+        if "write_valid" in _in
+        else cas(domain, m.input(f"{prefix}_write_valid", width=1), cycle=0)
+    )
+    write_idx = (
+        _in["write_idx"]
+        if "write_idx" in _in
+        else cas(domain, m.input(f"{prefix}_write_idx", width=idx_w), cycle=0)
+    )
+    write_addr = (
+        _in["write_addr"]
+        if "write_addr" in _in
+        else cas(domain, m.input(f"{prefix}_write_addr", width=addr_width), cycle=0)
+    )
+    write_data = (
+        _in["write_data"]
+        if "write_data" in _in
+        else cas(domain, m.input(f"{prefix}_write_data", width=data_width), cycle=0)
+    )
 
-        cas(domain, m.input(f"{prefix}_enq_valid", width=1), cycle=0))
-    enq_rob_idx = (_in["enq_rob_idx"] if "enq_rob_idx" in _in else
-        cas(domain, m.input(f"{prefix}_enq_rob_idx", width=rob_idx_width), cycle=0))
-
-    write_valid = (_in["write_valid"] if "write_valid" in _in else
-
-        cas(domain, m.input(f"{prefix}_write_valid", width=1), cycle=0))
-    write_idx = (_in["write_idx"] if "write_idx" in _in else
-        cas(domain, m.input(f"{prefix}_write_idx", width=idx_w), cycle=0))
-    write_addr = (_in["write_addr"] if "write_addr" in _in else
-        cas(domain, m.input(f"{prefix}_write_addr", width=addr_width), cycle=0))
-    write_data = (_in["write_data"] if "write_data" in _in else
-        cas(domain, m.input(f"{prefix}_write_data", width=data_width), cycle=0))
-
-    commit_valid = (_in["commit_valid"] if "commit_valid" in _in else
-
-        cas(domain, m.input(f"{prefix}_commit_valid", width=1), cycle=0))
+    commit_valid = (
+        _in["commit_valid"]
+        if "commit_valid" in _in
+        else cas(domain, m.input(f"{prefix}_commit_valid", width=1), cycle=0)
+    )
 
     # Forwarding lookup from load pipeline
-    fwd_valid = (_in["fwd_valid"] if "fwd_valid" in _in else
-        cas(domain, m.input(f"{prefix}_fwd_valid", width=1), cycle=0))
-    fwd_addr = (_in["fwd_addr"] if "fwd_addr" in _in else
-        cas(domain, m.input(f"{prefix}_fwd_addr", width=addr_width), cycle=0))
+    fwd_valid = (
+        _in["fwd_valid"]
+        if "fwd_valid" in _in
+        else cas(domain, m.input(f"{prefix}_fwd_valid", width=1), cycle=0)
+    )
+    fwd_addr = (
+        _in["fwd_addr"]
+        if "fwd_addr" in _in
+        else cas(domain, m.input(f"{prefix}_fwd_addr", width=addr_width), cycle=0)
+    )
 
     # SBuffer drain handshake
-    sbuf_ready = (_in["sbuf_ready"] if "sbuf_ready" in _in else
-        cas(domain, m.input(f"{prefix}_sbuf_ready", width=1), cycle=0))
+    sbuf_ready = (
+        _in["sbuf_ready"]
+        if "sbuf_ready" in _in
+        else cas(domain, m.input(f"{prefix}_sbuf_ready", width=1), cycle=0)
+    )
 
-    redirect_valid = (_in["redirect_valid"] if "redirect_valid" in _in else
-
-        cas(domain, m.input(f"{prefix}_redirect_valid", width=1), cycle=0))
+    redirect_valid = (
+        _in["redirect_valid"]
+        if "redirect_valid" in _in
+        else cas(domain, m.input(f"{prefix}_redirect_valid", width=1), cycle=0)
+    )
 
     zero1 = cas(domain, m.const(0, width=1), cycle=0)
     one1 = cas(domain, m.const(1, width=1), cycle=0)
@@ -103,12 +134,30 @@ def store_queue(
 
     # ── Entry storage ─────────────────────────────────────────────────
 
-    e_valid = [domain.signal(width=1, reset_value=0, name=f"{prefix}_sq_v_{i}") for i in range(size)]
-    e_addr_valid = [domain.signal(width=1, reset_value=0, name=f"{prefix}_sq_av_{i}") for i in range(size)]
-    e_committed = [domain.signal(width=1, reset_value=0, name=f"{prefix}_sq_cm_{i}") for i in range(size)]
-    e_addr = [domain.signal(width=addr_width, reset_value=0, name=f"{prefix}_sq_a_{i}") for i in range(size)]
-    e_data = [domain.signal(width=data_width, reset_value=0, name=f"{prefix}_sq_d_{i}") for i in range(size)]
-    e_rob = [domain.signal(width=rob_idx_width, reset_value=0, name=f"{prefix}_sq_r_{i}") for i in range(size)]
+    e_valid = [
+        domain.signal(width=1, reset_value=0, name=f"{prefix}_sq_v_{i}")
+        for i in range(size)
+    ]
+    e_addr_valid = [
+        domain.signal(width=1, reset_value=0, name=f"{prefix}_sq_av_{i}")
+        for i in range(size)
+    ]
+    e_committed = [
+        domain.signal(width=1, reset_value=0, name=f"{prefix}_sq_cm_{i}")
+        for i in range(size)
+    ]
+    e_addr = [
+        domain.signal(width=addr_width, reset_value=0, name=f"{prefix}_sq_a_{i}")
+        for i in range(size)
+    ]
+    e_data = [
+        domain.signal(width=data_width, reset_value=0, name=f"{prefix}_sq_d_{i}")
+        for i in range(size)
+    ]
+    e_rob = [
+        domain.signal(width=rob_idx_width, reset_value=0, name=f"{prefix}_sq_r_{i}")
+        for i in range(size)
+    ]
 
     enq_ptr = domain.signal(width=ptr_w, reset_value=0, name=f"{prefix}_sq_enq")
     deq_ptr = domain.signal(width=ptr_w, reset_value=0, name=f"{prefix}_sq_deq")
@@ -215,20 +264,26 @@ def store_queue(
         e_valid[j].assign(mux(is_deq, zero1, e_valid[j]), when=is_deq)
 
     # Pointer updates
-    next_enq = mux(can_enq,
-                    cas(domain, (wire_of(enq_ptr) + u(ptr_w, 1))[0:ptr_w], cycle=0),
-                    enq_ptr)
+    next_enq = mux(
+        can_enq,
+        cas(domain, (wire_of(enq_ptr) + u(ptr_w, 1))[0:ptr_w], cycle=0),
+        enq_ptr,
+    )
     next_enq = mux(redirect_valid | flush, commit_ptr, next_enq)
     enq_ptr <<= next_enq
 
-    next_deq = mux(drain_fire,
-                    cas(domain, (wire_of(deq_ptr) + u(ptr_w, 1))[0:ptr_w], cycle=0),
-                    deq_ptr)
+    next_deq = mux(
+        drain_fire,
+        cas(domain, (wire_of(deq_ptr) + u(ptr_w, 1))[0:ptr_w], cycle=0),
+        deq_ptr,
+    )
     deq_ptr <<= next_deq
 
-    next_cmt = mux(commit_valid,
-                    cas(domain, (wire_of(commit_ptr) + u(ptr_w, 1))[0:ptr_w], cycle=0),
-                    commit_ptr)
+    next_cmt = mux(
+        commit_valid,
+        cas(domain, (wire_of(commit_ptr) + u(ptr_w, 1))[0:ptr_w], cycle=0),
+        commit_ptr,
+    )
     commit_ptr <<= next_cmt
 
     # Flush
@@ -241,7 +296,12 @@ store_queue.__pycircuit_name__ = "store_queue"
 
 
 if __name__ == "__main__":
-    print(compile_cycle_aware(
-        store_queue, name="store_queue", eager=True,
-        size=8, addr_width=36,
-    ).emit_mlir())
+    print(
+        compile_cycle_aware(
+            store_queue,
+            name="store_queue",
+            eager=True,
+            size=8,
+            addr_width=36,
+        ).emit_mlir()
+    )

@@ -44,12 +44,15 @@ def scalar_prf(
 ) -> dict:
     # ── Cycle 0: Inputs ──────────────────────────────────────────────
     raddr = [_in(inputs, f"raddr{i}", m, domain, prefix, tag_w) for i in range(n_rd)]
-    wen   = [_in(inputs, f"wen{i}", m, domain, prefix, 1) for i in range(n_wr)]
+    wen = [_in(inputs, f"wen{i}", m, domain, prefix, 1) for i in range(n_wr)]
     waddr = [_in(inputs, f"waddr{i}", m, domain, prefix, tag_w) for i in range(n_wr)]
     wdata = [_in(inputs, f"wdata{i}", m, domain, prefix, data_w) for i in range(n_wr)]
 
     # ── State: register storage ──────────────────────────────────────
-    regs = [domain.signal(width=data_w, reset_value=0, name=f"{prefix}_reg_{i}") for i in range(entries)]
+    regs = [
+        domain.signal(width=data_w, reset_value=0, name=f"{prefix}_reg_{i}")
+        for i in range(entries)
+    ]
 
     zero = cas(domain, m.const(0, width=data_w), cycle=0)
 
@@ -90,5 +93,14 @@ scalar_prf.__pycircuit_name__ = "scalar_prf"
 
 
 if __name__ == "__main__":
-    print(compile_cycle_aware(scalar_prf, name="scalar_prf", eager=True,
-                               entries=16, n_rd=4, n_wr=2, prefix="prf").emit_mlir())
+    print(
+        compile_cycle_aware(
+            scalar_prf,
+            name="scalar_prf",
+            eager=True,
+            entries=16,
+            n_rd=4,
+            n_wr=2,
+            prefix="prf",
+        ).emit_mlir()
+    )

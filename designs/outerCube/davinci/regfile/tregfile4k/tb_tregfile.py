@@ -4,6 +4,7 @@ and write-to-read bypass (same-cycle forwarding).
 Uses test-size parameters: 64 banks × 8-deep × 8-bit = 512 bytes total.
 Port data width = 8 banks × 8 bits = 64 bits per port per cycle; 8-cycle epoch.
 """
+
 from __future__ import annotations
 
 import sys
@@ -16,10 +17,16 @@ if str(_THIS_DIR) not in sys.path:
     sys.path.insert(0, str(_THIS_DIR))
 
 from .parameters import (  # noqa: E402
-    NUM_BANKS, BANKS_PER_GROUP, NUM_GROUPS,
-    NUM_READ_PORTS, NUM_WRITE_PORTS, CALENDAR_LEN,
-    TEST_BANK_DEPTH, TEST_BANK_WIDTH,
-    tile_idx_width, port_data_width,
+    NUM_BANKS,
+    BANKS_PER_GROUP,
+    NUM_GROUPS,
+    NUM_READ_PORTS,
+    NUM_WRITE_PORTS,
+    CALENDAR_LEN,
+    TEST_BANK_DEPTH,
+    TEST_BANK_WIDTH,
+    tile_idx_width,
+    port_data_width,
 )
 from .tregfile import tregfile  # noqa: E402
 
@@ -60,9 +67,7 @@ def tb(t: Tb) -> None:
     tb.timeout(900)
 
     # Reference storage:  storage[bank][row] = value
-    storage: list[list[int]] = [
-        [0] * BANK_DEPTH for _ in range(NUM_BANKS)
-    ]
+    storage: list[list[int]] = [[0] * BANK_DEPTH for _ in range(NUM_BANKS)]
 
     def idle_ports() -> None:
         for p in range(NUM_READ_PORTS):
@@ -103,7 +108,8 @@ def tb(t: Tb) -> None:
                 expected |= (storage[b][tile_idx] & BW_MASK) << (i * BANK_WIDTH)
             expected &= PDATA_MASK
             tb.expect(
-                f"{PREFIX}_r{port}_data", expected,
+                f"{PREFIX}_r{port}_data",
+                expected,
                 msg=f"{label} port={port} tile={tile_idx} cy={cy} grp={grp}",
             )
             if cy < CALENDAR_LEN - 1:
@@ -252,7 +258,8 @@ def tb(t: Tb) -> None:
 
         # Bypass should forward write data → read output immediately
         tb.expect(
-            f"{PREFIX}_r0_data", w_word,
+            f"{PREFIX}_r0_data",
+            w_word,
             msg=f"T5-bypass cy={cy} grp={grp_r}",
         )
         if cy < CALENDAR_LEN - 1:
@@ -284,7 +291,8 @@ def tb(t: Tb) -> None:
         # Read should return tile 4's committed data, NOT tile 5's write data
         exp = _group_banks(tile4_data, grp)
         tb.expect(
-            f"{PREFIX}_r0_data", exp,
+            f"{PREFIX}_r0_data",
+            exp,
             msg=f"T6-no-bypass cy={cy} grp={grp}",
         )
         if cy < CALENDAR_LEN - 1:
@@ -315,7 +323,8 @@ def tb(t: Tb) -> None:
         # Read should return tile 4's stored data (bypass inactive)
         exp = _group_banks(tile4_data, grp)
         tb.expect(
-            f"{PREFIX}_r0_data", exp,
+            f"{PREFIX}_r0_data",
+            exp,
             msg=f"T7-no-bypass-wen0 cy={cy} grp={grp}",
         )
         if cy < CALENDAR_LEN - 1:
@@ -326,7 +335,10 @@ def tb(t: Tb) -> None:
 
 if __name__ == "__main__":
     circuit = compile_cycle_aware(
-tregfile, name="tb_tregfile_top", eager=True,
-        bank_depth=BANK_DEPTH, bank_width=BANK_WIDTH,
+        tregfile,
+        name="tb_tregfile_top",
+        eager=True,
+        bank_depth=BANK_DEPTH,
+        bank_width=BANK_WIDTH,
     )
     print(circuit.emit_mlir())

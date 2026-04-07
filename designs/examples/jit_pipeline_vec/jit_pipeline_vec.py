@@ -14,7 +14,7 @@ def build(m: CycleAwareCircuit, domain: CycleAwareDomain, stages: int = 3) -> No
     b = cas(domain, m.input("b", width=16), cycle=0)
     sel = cas(domain, m.input("sel", width=1), cycle=0)
 
-    tag = (a == b)
+    tag = a == b
     data = (a + b) if sel else (a ^ b)
 
     for i in range(stages):

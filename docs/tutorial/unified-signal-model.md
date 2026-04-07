@@ -41,4 +41,3 @@ For larger designs, prefer `spec` + structured port declarations:
 - `m.outputs(spec, values, prefix=...)`
 
 See `docs/FRONTEND_API.md` and `docs/SPEC_STRUCTURES.md`.
-

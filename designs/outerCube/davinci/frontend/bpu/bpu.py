@@ -28,7 +28,6 @@ def _in(io, key, m, domain, prefix, width):
     return cas(domain, m.input(f"{prefix}_{key}", width=width), cycle=0)
 
 
-
 def bpu(
     m: CycleAwareCircuit,
     domain: CycleAwareDomain,
@@ -45,19 +44,23 @@ def bpu(
     pc = _in(inputs, "pc", m, domain, prefix, addr_w)
 
     # Update interface (from BRU resolve)
-    update_valid   = _in(inputs, "update_valid", m, domain, prefix, 1)
-    update_pc      = _in(inputs, "update_pc", m, domain, prefix, addr_w)
-    update_taken   = _in(inputs, "update_taken", m, domain, prefix, 1)
-    update_target  = _in(inputs, "update_target", m, domain, prefix, addr_w)
+    update_valid = _in(inputs, "update_valid", m, domain, prefix, 1)
+    update_pc = _in(inputs, "update_pc", m, domain, prefix, addr_w)
+    update_taken = _in(inputs, "update_taken", m, domain, prefix, 1)
+    update_target = _in(inputs, "update_target", m, domain, prefix, addr_w)
 
     # ── State: bimodal counter table ─────────────────────────────────
-    counters = [domain.signal(width=CTR_W, reset_value=1, name=f"{prefix}_ctr_{i}")
-                for i in range(n_entries)]
-    targets  = [domain.signal(width=addr_w, reset_value=0, name=f"{prefix}_tgt_{i}")
-                for i in range(n_entries)]
+    counters = [
+        domain.signal(width=CTR_W, reset_value=1, name=f"{prefix}_ctr_{i}")
+        for i in range(n_entries)
+    ]
+    targets = [
+        domain.signal(width=addr_w, reset_value=0, name=f"{prefix}_tgt_{i}")
+        for i in range(n_entries)
+    ]
 
     # ── Prediction (combinational) ───────────────────────────────────
-    rd_idx = pc[2:2 + idx_w]
+    rd_idx = pc[2 : 2 + idx_w]
 
     pred_ctr = counters[0]
     pred_tgt = targets[0]
@@ -78,7 +81,7 @@ def bpu(
     # ── Cycle 1: Update counter table ────────────────────────────────
     domain.next()
 
-    wr_idx = update_pc[2:2 + idx_w]
+    wr_idx = update_pc[2 : 2 + idx_w]
     for i in range(n_entries):
         hit = update_valid & (wr_idx == cas(domain, m.const(i, width=idx_w), cycle=0))
         old_ctr = counters[i]
@@ -98,5 +101,8 @@ bpu.__pycircuit_name__ = "bpu"
 
 
 if __name__ == "__main__":
-    print(compile_cycle_aware(bpu, name="bpu", eager=True,
-                               n_entries=8, addr_w=32).emit_mlir())
+    print(
+        compile_cycle_aware(
+            bpu, name="bpu", eager=True, n_entries=8, addr_w=32
+        ).emit_mlir()
+    )

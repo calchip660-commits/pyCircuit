@@ -50,27 +50,35 @@ def vec_unit(
 ) -> dict:
     # ── Cycle 0: Issue interface ─────────────────────────────────────
     issue_valid = _in(inputs, "issue_valid", m, domain, prefix, 1)
-    issue_op    = _in(inputs, "issue_op", m, domain, prefix, uop_w)
+    issue_op = _in(inputs, "issue_op", m, domain, prefix, uop_w)
     issue_ptsrc0 = _in(inputs, "ptsrc0", m, domain, prefix, ttag_w)
     issue_ptsrc1 = _in(inputs, "ptsrc1", m, domain, prefix, ttag_w)
     issue_ptsrc2 = _in(inputs, "ptsrc2", m, domain, prefix, ttag_w)
-    issue_ptdst  = _in(inputs, "ptdst", m, domain, prefix, ttag_w)
+    issue_ptdst = _in(inputs, "ptdst", m, domain, prefix, ttag_w)
 
     # Pipeline state: tracks current instruction through 2 epochs (16 cycles)
     pipe_valid = domain.signal(width=1, reset_value=0, name=f"{prefix}_pv")
-    pipe_op    = domain.signal(width=uop_w, reset_value=0, name=f"{prefix}_pop")
+    pipe_op = domain.signal(width=uop_w, reset_value=0, name=f"{prefix}_pop")
     pipe_ptdst = domain.signal(width=ttag_w, reset_value=0, name=f"{prefix}_ptd")
-    pipe_cycle = domain.signal(width=EPOCH_W + 1, reset_value=0, name=f"{prefix}_pc")  # 0..15
+    pipe_cycle = domain.signal(
+        width=EPOCH_W + 1, reset_value=0, name=f"{prefix}_pc"
+    )  # 0..15
 
     total_w = EPOCH_W + 1
-    max_cy  = VEC_LATENCY - 1
+    max_cy = VEC_LATENCY - 1
 
     # Read port requests (active during read epoch: cycle 0..7)
-    is_read_phase = pipe_valid & (pipe_cycle < cas(domain, m.const(epoch_cy, width=total_w), cycle=0))
-    is_write_phase = pipe_valid & (pipe_cycle >= cas(domain, m.const(epoch_cy, width=total_w), cycle=0))
+    is_read_phase = pipe_valid & (
+        pipe_cycle < cas(domain, m.const(epoch_cy, width=total_w), cycle=0)
+    )
+    is_write_phase = pipe_valid & (
+        pipe_cycle >= cas(domain, m.const(epoch_cy, width=total_w), cycle=0)
+    )
 
     # Completion: final cycle of write epoch
-    done = pipe_valid & (pipe_cycle == cas(domain, m.const(max_cy, width=total_w), cycle=0))
+    done = pipe_valid & (
+        pipe_cycle == cas(domain, m.const(max_cy, width=total_w), cycle=0)
+    )
 
     # Ready to accept new instruction
     can_accept = (~pipe_valid) | done
@@ -93,14 +101,32 @@ def vec_unit(
     # ── Cycle 1: Pipeline advance ────────────────────────────────────
     domain.next()
 
-    next_cycle = (pipe_cycle + cas(domain, m.const(1, width=total_w), cycle=0)).trunc(total_w)
+    next_cycle = (pipe_cycle + cas(domain, m.const(1, width=total_w), cycle=0)).trunc(
+        total_w
+    )
 
     # Accept new instruction
-    pipe_valid <<= mux(done, issue_valid, mux(issue_valid & can_accept, cas(domain, m.const(1, width=1), cycle=0), pipe_valid))
-    pipe_cycle <<= mux(done & issue_valid, cas(domain, m.const(0, width=total_w), cycle=0),
-                        mux(done & (~issue_valid), cas(domain, m.const(0, width=total_w), cycle=0),
-                            mux(pipe_valid, next_cycle, cas(domain, m.const(0, width=total_w), cycle=0))))
-    pipe_op    <<= mux(issue_valid & can_accept, issue_op, pipe_op)
+    pipe_valid <<= mux(
+        done,
+        issue_valid,
+        mux(
+            issue_valid & can_accept,
+            cas(domain, m.const(1, width=1), cycle=0),
+            pipe_valid,
+        ),
+    )
+    pipe_cycle <<= mux(
+        done & issue_valid,
+        cas(domain, m.const(0, width=total_w), cycle=0),
+        mux(
+            done & (~issue_valid),
+            cas(domain, m.const(0, width=total_w), cycle=0),
+            mux(
+                pipe_valid, next_cycle, cas(domain, m.const(0, width=total_w), cycle=0)
+            ),
+        ),
+    )
+    pipe_op <<= mux(issue_valid & can_accept, issue_op, pipe_op)
     pipe_ptdst <<= mux(issue_valid & can_accept, issue_ptdst, pipe_ptdst)
 
     return outs

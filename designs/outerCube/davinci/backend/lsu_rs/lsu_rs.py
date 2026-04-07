@@ -35,7 +35,6 @@ def _in(io, key, m, domain, prefix, width):
     return cas(domain, m.input(f"{prefix}_{key}", width=width), cycle=0)
 
 
-
 def lsu_rs(
     m: CycleAwareCircuit,
     domain: CycleAwareDomain,
@@ -55,30 +54,73 @@ def lsu_rs(
     outs: dict = {}
 
     # ── Cycle 0: Inputs ──────────────────────────────────────────────
-    disp_valid = [_in(inputs, f"dv{i}", m, domain, prefix, 1) for i in range(n_dispatch)]
-    disp_op    = [_in(inputs, f"dop{i}", m, domain, prefix, uop_w) for i in range(n_dispatch)]
-    disp_psrc1 = [_in(inputs, f"dps1_{i}", m, domain, prefix, tag_w) for i in range(n_dispatch)]
-    disp_rdy1  = [_in(inputs, f"dr1_{i}", m, domain, prefix, 1) for i in range(n_dispatch)]
-    disp_psrc2 = [_in(inputs, f"dps2_{i}", m, domain, prefix, tag_w) for i in range(n_dispatch)]
-    disp_rdy2  = [_in(inputs, f"dr2_{i}", m, domain, prefix, 1) for i in range(n_dispatch)]
-    disp_pdst  = [_in(inputs, f"dpd{i}", m, domain, prefix, tag_w) for i in range(n_dispatch)]
-    disp_is_store = [_in(inputs, f"dst{i}", m, domain, prefix, 1) for i in range(n_dispatch)]
+    disp_valid = [
+        _in(inputs, f"dv{i}", m, domain, prefix, 1) for i in range(n_dispatch)
+    ]
+    disp_op = [
+        _in(inputs, f"dop{i}", m, domain, prefix, uop_w) for i in range(n_dispatch)
+    ]
+    disp_psrc1 = [
+        _in(inputs, f"dps1_{i}", m, domain, prefix, tag_w) for i in range(n_dispatch)
+    ]
+    disp_rdy1 = [
+        _in(inputs, f"dr1_{i}", m, domain, prefix, 1) for i in range(n_dispatch)
+    ]
+    disp_psrc2 = [
+        _in(inputs, f"dps2_{i}", m, domain, prefix, tag_w) for i in range(n_dispatch)
+    ]
+    disp_rdy2 = [
+        _in(inputs, f"dr2_{i}", m, domain, prefix, 1) for i in range(n_dispatch)
+    ]
+    disp_pdst = [
+        _in(inputs, f"dpd{i}", m, domain, prefix, tag_w) for i in range(n_dispatch)
+    ]
+    disp_is_store = [
+        _in(inputs, f"dst{i}", m, domain, prefix, 1) for i in range(n_dispatch)
+    ]
 
     cdb_valid = [_in(inputs, f"cdb_v{i}", m, domain, prefix, 1) for i in range(n_cdb)]
-    cdb_tag   = [_in(inputs, f"cdb_t{i}", m, domain, prefix, tag_w) for i in range(n_cdb)]
+    cdb_tag = [_in(inputs, f"cdb_t{i}", m, domain, prefix, tag_w) for i in range(n_cdb)]
 
     flush = _in(inputs, "flush", m, domain, prefix, 1)
 
     # ── State ────────────────────────────────────────────────────────
-    valid    = [domain.signal(width=1, reset_value=0, name=f"{prefix}_v_{e}") for e in range(n_entries)]
-    op       = [domain.signal(width=uop_w, reset_value=0, name=f"{prefix}_op_{e}") for e in range(n_entries)]
-    age      = [domain.signal(width=age_w, reset_value=0, name=f"{prefix}_ag_{e}") for e in range(n_entries)]
-    psrc1    = [domain.signal(width=tag_w, reset_value=0, name=f"{prefix}_ps1_{e}") for e in range(n_entries)]
-    rdy1     = [domain.signal(width=1, reset_value=0, name=f"{prefix}_r1_{e}") for e in range(n_entries)]
-    psrc2    = [domain.signal(width=tag_w, reset_value=0, name=f"{prefix}_ps2_{e}") for e in range(n_entries)]
-    rdy2     = [domain.signal(width=1, reset_value=0, name=f"{prefix}_r2_{e}") for e in range(n_entries)]
-    pdst     = [domain.signal(width=tag_w, reset_value=0, name=f"{prefix}_pd_{e}") for e in range(n_entries)]
-    is_store = [domain.signal(width=1, reset_value=0, name=f"{prefix}_st_{e}") for e in range(n_entries)]
+    valid = [
+        domain.signal(width=1, reset_value=0, name=f"{prefix}_v_{e}")
+        for e in range(n_entries)
+    ]
+    op = [
+        domain.signal(width=uop_w, reset_value=0, name=f"{prefix}_op_{e}")
+        for e in range(n_entries)
+    ]
+    age = [
+        domain.signal(width=age_w, reset_value=0, name=f"{prefix}_ag_{e}")
+        for e in range(n_entries)
+    ]
+    psrc1 = [
+        domain.signal(width=tag_w, reset_value=0, name=f"{prefix}_ps1_{e}")
+        for e in range(n_entries)
+    ]
+    rdy1 = [
+        domain.signal(width=1, reset_value=0, name=f"{prefix}_r1_{e}")
+        for e in range(n_entries)
+    ]
+    psrc2 = [
+        domain.signal(width=tag_w, reset_value=0, name=f"{prefix}_ps2_{e}")
+        for e in range(n_entries)
+    ]
+    rdy2 = [
+        domain.signal(width=1, reset_value=0, name=f"{prefix}_r2_{e}")
+        for e in range(n_entries)
+    ]
+    pdst = [
+        domain.signal(width=tag_w, reset_value=0, name=f"{prefix}_pd_{e}")
+        for e in range(n_entries)
+    ]
+    is_store = [
+        domain.signal(width=1, reset_value=0, name=f"{prefix}_st_{e}")
+        for e in range(n_entries)
+    ]
 
     age_ctr = domain.signal(width=age_w, reset_value=0, name=f"{prefix}_ac")
 
@@ -127,7 +169,9 @@ def lsu_rs(
     n_v = cas(domain, m.const(0, width=eidx_w + 1), cycle=0)
     for e in range(n_entries):
         n_v = n_v + valid[e]
-    outs["full"] = n_v >= cas(domain, m.const(n_entries - n_dispatch, width=eidx_w + 1), cycle=0)
+    outs["full"] = n_v >= cas(
+        domain, m.const(n_entries - n_dispatch, width=eidx_w + 1), cycle=0
+    )
 
     if inputs is None:
         for k in outs:
@@ -164,6 +208,17 @@ lsu_rs.__pycircuit_name__ = "lsu_rs"
 
 
 if __name__ == "__main__":
-    print(compile_cycle_aware(lsu_rs, name="lsu_rs", eager=True,
-                               n_entries=4, n_dispatch=2, n_cdb=2,
-                               tag_w=3, data_w=16, uop_w=4, age_w=3).emit_mlir())
+    print(
+        compile_cycle_aware(
+            lsu_rs,
+            name="lsu_rs",
+            eager=True,
+            n_entries=4,
+            n_dispatch=2,
+            n_cdb=2,
+            tag_w=3,
+            data_w=16,
+            uop_w=4,
+            age_w=3,
+        ).emit_mlir()
+    )

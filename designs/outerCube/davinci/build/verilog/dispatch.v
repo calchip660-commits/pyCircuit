@@ -538,4 +538,3 @@ assign dispatch_out_trdy3 = dispatch_trdy3;
 assign dispatch_stall = pyc_comb_172;
 
 endmodule
-

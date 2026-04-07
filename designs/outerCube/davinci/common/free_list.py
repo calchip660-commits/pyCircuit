@@ -37,14 +37,23 @@ def free_list(
     cnt_w = ptr_w + 1
 
     # ── Cycle 0: Inputs ──────────────────────────────────────────────
-    alloc_req  = [_in(inputs, f"alloc_req{i}", m, domain, prefix, 1) for i in range(deq_width)]
-    free_valid = [_in(inputs, f"free_valid{i}", m, domain, prefix, 1) for i in range(enq_width)]
-    free_tag   = [_in(inputs, f"free_tag{i}", m, domain, prefix, tag_w) for i in range(enq_width)]
-    restore    = _in(inputs, "restore", m, domain, prefix, 1)
+    alloc_req = [
+        _in(inputs, f"alloc_req{i}", m, domain, prefix, 1) for i in range(deq_width)
+    ]
+    free_valid = [
+        _in(inputs, f"free_valid{i}", m, domain, prefix, 1) for i in range(enq_width)
+    ]
+    free_tag = [
+        _in(inputs, f"free_tag{i}", m, domain, prefix, tag_w) for i in range(enq_width)
+    ]
+    restore = _in(inputs, "restore", m, domain, prefix, 1)
     restore_head = _in(inputs, "restore_head", m, domain, prefix, ptr_w)
 
     # ── State ────────────────────────────────────────────────────────
-    fifo = [domain.signal(width=tag_w, reset_value=i, name=f"{prefix}_fifo_{i}") for i in range(depth)]
+    fifo = [
+        domain.signal(width=tag_w, reset_value=i, name=f"{prefix}_fifo_{i}")
+        for i in range(depth)
+    ]
     head = domain.signal(width=ptr_w, reset_value=0, name=f"{prefix}_head")
     tail = domain.signal(width=ptr_w, reset_value=depth - 1, name=f"{prefix}_tail")
     count = domain.signal(width=cnt_w, reset_value=depth, name=f"{prefix}_count")
@@ -52,7 +61,7 @@ def free_list(
     # ── Combinational read: up to `deq_width` allocations from head ──
     alloc_tags = []
     for i in range(deq_width):
-        idx = (head + cas(domain, m.const(i, width=ptr_w), cycle=0))
+        idx = head + cas(domain, m.const(i, width=ptr_w), cycle=0)
         idx_trunc = idx.trunc(ptr_w) if wire_of(idx).width > ptr_w else idx
         read_val = fifo[0]
         for s in range(depth):
@@ -96,7 +105,13 @@ def free_list(
 
     head <<= mux(restore, restore_head, next_head)
     tail <<= new_tail
-    count <<= mux(restore, (new_tail - restore_head + cas(domain, m.const(1, width=cnt_w), cycle=0)).trunc(cnt_w), next_count)
+    count <<= mux(
+        restore,
+        (new_tail - restore_head + cas(domain, m.const(1, width=cnt_w), cycle=0)).trunc(
+            cnt_w
+        ),
+        next_count,
+    )
 
     return outs
 
@@ -105,5 +120,15 @@ free_list.__pycircuit_name__ = "free_list"
 
 
 if __name__ == "__main__":
-    print(compile_cycle_aware(free_list, name="free_list", eager=True,
-                               depth=96, tag_w=7, deq_width=4, enq_width=4, prefix="fl").emit_mlir())
+    print(
+        compile_cycle_aware(
+            free_list,
+            name="free_list",
+            eager=True,
+            depth=96,
+            tag_w=7,
+            deq_width=4,
+            enq_width=4,
+            prefix="fl",
+        ).emit_mlir()
+    )

@@ -24,11 +24,10 @@ def _in(io, key, m, domain, prefix, width):
     return cas(domain, m.input(f"{prefix}_{key}", width=width), cycle=0)
 
 
-
-MULDIV_MUL  = 0
+MULDIV_MUL = 0
 MULDIV_MULH = 1
-MULDIV_DIV  = 2
-MULDIV_REM  = 3
+MULDIV_DIV = 2
+MULDIV_REM = 3
 MULDIV_FUNC_W = 2
 
 
@@ -49,26 +48,39 @@ def muldiv(
     pdst = _in(inputs, "pdst", m, domain, prefix, tag_w)
 
     # ── Pipeline registers (4 stages) ────────────────────────────────
-    pipe_valid = [domain.signal(width=1, reset_value=0, name=f"{prefix}_pv_{s}") for s in range(pipe_depth)]
-    pipe_tag   = [domain.signal(width=tag_w, reset_value=0, name=f"{prefix}_pt_{s}") for s in range(pipe_depth)]
-    pipe_data  = [domain.signal(width=data_w, reset_value=0, name=f"{prefix}_pd_{s}") for s in range(pipe_depth)]
+    pipe_valid = [
+        domain.signal(width=1, reset_value=0, name=f"{prefix}_pv_{s}")
+        for s in range(pipe_depth)
+    ]
+    pipe_tag = [
+        domain.signal(width=tag_w, reset_value=0, name=f"{prefix}_pt_{s}")
+        for s in range(pipe_depth)
+    ]
+    pipe_data = [
+        domain.signal(width=data_w, reset_value=0, name=f"{prefix}_pd_{s}")
+        for s in range(pipe_depth)
+    ]
 
     # Compute result (combinational for simplicity; real MUL would be multi-stage)
-    is_mul = (func == cas(domain, m.const(MULDIV_MUL, width=MULDIV_FUNC_W), cycle=0)) | \
-             (func == cas(domain, m.const(MULDIV_MULH, width=MULDIV_FUNC_W), cycle=0))
+    is_mul = (
+        func == cas(domain, m.const(MULDIV_MUL, width=MULDIV_FUNC_W), cycle=0)
+    ) | (func == cas(domain, m.const(MULDIV_MULH, width=MULDIV_FUNC_W), cycle=0))
     mul_result = (src1 * src2).trunc(data_w)
 
     # ── DIV state machine (non-pipelined, 12-20 cycle iterative) ─────
     DIV_MAX_CY = 12
-    div_busy   = domain.signal(width=1, reset_value=0, name=f"{prefix}_div_busy")
-    div_count  = domain.signal(width=5, reset_value=0, name=f"{prefix}_div_cnt")
-    div_tag    = domain.signal(width=tag_w, reset_value=0, name=f"{prefix}_div_tag")
+    div_busy = domain.signal(width=1, reset_value=0, name=f"{prefix}_div_busy")
+    div_count = domain.signal(width=5, reset_value=0, name=f"{prefix}_div_cnt")
+    div_tag = domain.signal(width=tag_w, reset_value=0, name=f"{prefix}_div_tag")
     div_result = domain.signal(width=data_w, reset_value=0, name=f"{prefix}_div_res")
 
-    is_div = (func == cas(domain, m.const(MULDIV_DIV, width=MULDIV_FUNC_W), cycle=0)) | \
-             (func == cas(domain, m.const(MULDIV_REM, width=MULDIV_FUNC_W), cycle=0))
+    is_div = (
+        func == cas(domain, m.const(MULDIV_DIV, width=MULDIV_FUNC_W), cycle=0)
+    ) | (func == cas(domain, m.const(MULDIV_REM, width=MULDIV_FUNC_W), cycle=0))
 
-    div_done = div_busy & (div_count == cas(domain, m.const(DIV_MAX_CY - 1, width=5), cycle=0))
+    div_done = div_busy & (
+        div_count == cas(domain, m.const(DIV_MAX_CY - 1, width=5), cycle=0)
+    )
 
     # Overall busy: MUL pipeline stage 0 occupied OR DIV in progress
     busy_sig = pipe_valid[0] | div_busy
@@ -96,13 +108,13 @@ def muldiv(
 
     # MUL pipeline: stage 0 ← input
     pipe_valid[0] <<= valid & is_mul
-    pipe_tag[0]   <<= pdst
-    pipe_data[0]  <<= mul_result
+    pipe_tag[0] <<= pdst
+    pipe_data[0] <<= mul_result
 
     for s in range(1, pipe_depth):
         pipe_valid[s] <<= pipe_valid[s - 1]
-        pipe_tag[s]   <<= pipe_tag[s - 1]
-        pipe_data[s]  <<= pipe_data[s - 1]
+        pipe_tag[s] <<= pipe_tag[s - 1]
+        pipe_data[s] <<= pipe_data[s - 1]
 
     # DIV state machine
     div_start = valid & is_div & (~div_busy)
@@ -112,7 +124,9 @@ def muldiv(
     div_count.assign(cas(domain, m.const(0, width=5), cycle=0), when=div_start)
 
     counting = div_busy & (~div_done)
-    div_count.assign((div_count + cas(domain, m.const(1, width=5), cycle=0)).trunc(5), when=counting)
+    div_count.assign(
+        (div_count + cas(domain, m.const(1, width=5), cycle=0)).trunc(5), when=counting
+    )
 
     div_busy.assign(cas(domain, m.const(0, width=1), cycle=0), when=div_done)
 
@@ -123,5 +137,8 @@ muldiv.__pycircuit_name__ = "muldiv"
 
 
 if __name__ == "__main__":
-    print(compile_cycle_aware(muldiv, name="muldiv", eager=True,
-                               data_w=16, pipe_depth=4).emit_mlir())
+    print(
+        compile_cycle_aware(
+            muldiv, name="muldiv", eager=True, data_w=16, pipe_depth=4
+        ).emit_mlir()
+    )

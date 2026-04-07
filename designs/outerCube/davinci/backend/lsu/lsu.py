@@ -31,7 +31,6 @@ def _in(io, key, m, domain, prefix, width):
     return cas(domain, m.input(f"{prefix}_{key}", width=width), cycle=0)
 
 
-
 def lsu(
     m: CycleAwareCircuit,
     domain: CycleAwareDomain,
@@ -53,14 +52,23 @@ def lsu(
     st_data = _in(inputs, "st_data", m, domain, prefix, data_w)
 
     # ── Load pipeline (4 stages, modeled as shift register) ──────────
-    ld_pipe_v = [domain.signal(width=1, reset_value=0, name=f"{prefix}_lpv_{s}") for s in range(pipe_depth)]
-    ld_pipe_tag = [domain.signal(width=tag_w, reset_value=0, name=f"{prefix}_lpt_{s}") for s in range(pipe_depth)]
-    ld_pipe_addr = [domain.signal(width=addr_w, reset_value=0, name=f"{prefix}_lpa_{s}") for s in range(pipe_depth)]
+    ld_pipe_v = [
+        domain.signal(width=1, reset_value=0, name=f"{prefix}_lpv_{s}")
+        for s in range(pipe_depth)
+    ]
+    ld_pipe_tag = [
+        domain.signal(width=tag_w, reset_value=0, name=f"{prefix}_lpt_{s}")
+        for s in range(pipe_depth)
+    ]
+    ld_pipe_addr = [
+        domain.signal(width=addr_w, reset_value=0, name=f"{prefix}_lpa_{s}")
+        for s in range(pipe_depth)
+    ]
 
     # ── Store buffer (simplified: single entry for forwarding demo) ──
     stb_valid = domain.signal(width=1, reset_value=0, name=f"{prefix}_stbv")
-    stb_addr  = domain.signal(width=addr_w, reset_value=0, name=f"{prefix}_stba")
-    stb_data  = domain.signal(width=data_w, reset_value=0, name=f"{prefix}_stbd")
+    stb_addr = domain.signal(width=addr_w, reset_value=0, name=f"{prefix}_stba")
+    stb_data = domain.signal(width=data_w, reset_value=0, name=f"{prefix}_stbd")
 
     # Store-to-load forwarding check (combinational)
     fwd_hit = stb_valid & (stb_addr == ld_addr)
@@ -68,9 +76,11 @@ def lsu(
 
     # Load result from pipeline output
     ld_result_valid = ld_pipe_v[pipe_depth - 1]
-    ld_result_tag   = ld_pipe_tag[pipe_depth - 1]
-    ld_result_data  = cas(domain, m.const(0, width=data_w), cycle=0)  # placeholder: real impl reads cache
-    ld_result_data  = mux(fwd_hit, fwd_data, ld_result_data)
+    ld_result_tag = ld_pipe_tag[pipe_depth - 1]
+    ld_result_data = cas(
+        domain, m.const(0, width=data_w), cycle=0
+    )  # placeholder: real impl reads cache
+    ld_result_data = mux(fwd_hit, fwd_data, ld_result_data)
 
     outs = {
         "ld_result_valid": ld_result_valid,
@@ -105,4 +115,8 @@ lsu.__pycircuit_name__ = "lsu"
 
 
 if __name__ == "__main__":
-    print(compile_cycle_aware(lsu, name="lsu", eager=True, data_w=32, addr_w=32).emit_mlir())
+    print(
+        compile_cycle_aware(
+            lsu, name="lsu", eager=True, data_w=32, addr_w=32
+        ).emit_mlir()
+    )

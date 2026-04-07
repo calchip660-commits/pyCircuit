@@ -38,4 +38,8 @@ def value_probe(p: ProbeBuilder, dut: ProbeView, width: int = 8) -> None:
 
 
 if __name__ == "__main__":
-    print(compile_cycle_aware(build, name="xz_value_model_smoke", eager=True, width=8).emit_mlir())
+    print(
+        compile_cycle_aware(
+            build, name="xz_value_model_smoke", eager=True, width=8
+        ).emit_mlir()
+    )

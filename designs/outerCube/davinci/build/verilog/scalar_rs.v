@@ -13574,4 +13574,3 @@ assign scalar_rs_issue_ckpt = pyc_comb_3554;
 assign scalar_rs_full = pyc_comb_3555;
 
 endmodule
-

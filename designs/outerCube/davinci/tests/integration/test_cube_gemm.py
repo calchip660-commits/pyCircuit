@@ -18,7 +18,6 @@ sys.path.insert(0, _root)
 from pycircuit import compile_cycle_aware, CycleAwareTb
 from pycircuit.tb import Tb
 
-
 TEST_PROGRAM = """
 Scenario: GEMM FP16, Mode A, M=8, K=64, N=64
   Phase 1: TILE.LD A + 8× TILE.LD B
@@ -33,9 +32,19 @@ Performance: 4096 MACs/cycle × 8 steps = 32768 FP16 FMAs
 def test_cube_rs_compile():
     """Cube RS compiles to valid MLIR."""
     from designs.outerCube.davinci.backend.cube_rs.cube_rs import cube_rs
-    circ = compile_cycle_aware(cube_rs, name="cube_rs", eager=True,
-                                n_entries=4, n_dispatch=2, n_tcb=2,
-                                n_tile_src=2, ttag_w=3, uop_w=4, age_w=3)
+
+    circ = compile_cycle_aware(
+        cube_rs,
+        name="cube_rs",
+        eager=True,
+        n_entries=4,
+        n_dispatch=2,
+        n_tcb=2,
+        n_tile_src=2,
+        ttag_w=3,
+        uop_w=4,
+        age_w=3,
+    )
     mlir = circ.emit_mlir()
     assert "crs_issue_valid" in mlir
     assert "crs_issue_op" in mlir
@@ -45,8 +54,10 @@ def test_cube_rs_compile():
 def test_cube_unit_compile():
     """Cube Unit compiles to valid MLIR."""
     from designs.outerCube.davinci.backend.cube_unit.cube_unit import cube_unit
-    circ = compile_cycle_aware(cube_unit, name="cube_unit", eager=True,
-                                ttag_w=3, prefix="cu")
+
+    circ = compile_cycle_aware(
+        cube_unit, name="cube_unit", eager=True, ttag_w=3, prefix="cu"
+    )
     mlir = circ.emit_mlir()
     assert "cu_busy" in mlir
     assert "cu_complete_valid" in mlir

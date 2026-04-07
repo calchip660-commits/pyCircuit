@@ -1,6 +1,12 @@
 from __future__ import annotations
 
-from pycircuit import CycleAwareCircuit, CycleAwareDomain, cas, compile_cycle_aware, wire_of
+from pycircuit import (
+    CycleAwareCircuit,
+    CycleAwareDomain,
+    cas,
+    compile_cycle_aware,
+    wire_of,
+)
 
 
 def _lane(domain, m, x, gain, bias, enable, *, width: int = 32):

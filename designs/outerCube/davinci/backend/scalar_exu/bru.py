@@ -19,16 +19,15 @@ from pycircuit import (
 
 from ...common.parameters import PHYS_GREG_W, SCALAR_DATA_W, CHECKPOINT_W
 
-BR_BEQ  = 0
-BR_BNE  = 1
-BR_BLT  = 2
-BR_BGE  = 3
+BR_BEQ = 0
+BR_BNE = 1
+BR_BLT = 2
+BR_BGE = 3
 BR_BLTU = 4
 BR_BGEU = 5
-BR_JAL  = 6
+BR_JAL = 6
 BR_JALR = 7
 BR_FUNC_W = 3
-
 
 
 def _in(io, key, m, domain, prefix, width):
@@ -48,40 +47,56 @@ def bru(
     prefix: str = "bru",
     inputs: dict | None = None,
 ) -> dict:
-    valid     = _in(inputs, "valid", m, domain, prefix, 1)
-    func      = _in(inputs, "func", m, domain, prefix, BR_FUNC_W)
-    src1      = _in(inputs, "src1", m, domain, prefix, data_w)
-    src2      = _in(inputs, "src2", m, domain, prefix, data_w)
+    valid = _in(inputs, "valid", m, domain, prefix, 1)
+    func = _in(inputs, "func", m, domain, prefix, BR_FUNC_W)
+    src1 = _in(inputs, "src1", m, domain, prefix, data_w)
+    src2 = _in(inputs, "src2", m, domain, prefix, data_w)
     predicted = _in(inputs, "predicted", m, domain, prefix, 1)  # predicted taken?
-    pc        = _in(inputs, "pc", m, domain, prefix, addr_w)
-    offset    = _in(inputs, "offset", m, domain, prefix, data_w)
-    pdst      = _in(inputs, "pdst", m, domain, prefix, tag_w)
-    ckpt_id   = _in(inputs, "ckpt", m, domain, prefix, ckpt_w)
+    pc = _in(inputs, "pc", m, domain, prefix, addr_w)
+    offset = _in(inputs, "offset", m, domain, prefix, data_w)
+    pdst = _in(inputs, "pdst", m, domain, prefix, tag_w)
+    ckpt_id = _in(inputs, "ckpt", m, domain, prefix, ckpt_w)
 
     zero = cas(domain, m.const(0, width=1), cycle=0)
-    one  = cas(domain, m.const(1, width=1), cycle=0)
+    one = cas(domain, m.const(1, width=1), cycle=0)
 
     # ── Compare ──────────────────────────────────────────────────────
-    eq  = src1 == src2
-    lt  = src1 < src2
+    eq = src1 == src2
+    lt = src1 < src2
     ltu = src1 < src2
 
     taken = zero
-    taken = mux(func == cas(domain, m.const(BR_BEQ,  width=BR_FUNC_W), cycle=0), eq, taken)
-    taken = mux(func == cas(domain, m.const(BR_BNE,  width=BR_FUNC_W), cycle=0), ~eq, taken)
-    taken = mux(func == cas(domain, m.const(BR_BLT,  width=BR_FUNC_W), cycle=0), lt, taken)
-    taken = mux(func == cas(domain, m.const(BR_BGE,  width=BR_FUNC_W), cycle=0), ~lt, taken)
-    taken = mux(func == cas(domain, m.const(BR_BLTU, width=BR_FUNC_W), cycle=0), ltu, taken)
-    taken = mux(func == cas(domain, m.const(BR_BGEU, width=BR_FUNC_W), cycle=0), ~ltu, taken)
-    taken = mux(func == cas(domain, m.const(BR_JAL,  width=BR_FUNC_W), cycle=0), one, taken)
-    taken = mux(func == cas(domain, m.const(BR_JALR, width=BR_FUNC_W), cycle=0), one, taken)
+    taken = mux(
+        func == cas(domain, m.const(BR_BEQ, width=BR_FUNC_W), cycle=0), eq, taken
+    )
+    taken = mux(
+        func == cas(domain, m.const(BR_BNE, width=BR_FUNC_W), cycle=0), ~eq, taken
+    )
+    taken = mux(
+        func == cas(domain, m.const(BR_BLT, width=BR_FUNC_W), cycle=0), lt, taken
+    )
+    taken = mux(
+        func == cas(domain, m.const(BR_BGE, width=BR_FUNC_W), cycle=0), ~lt, taken
+    )
+    taken = mux(
+        func == cas(domain, m.const(BR_BLTU, width=BR_FUNC_W), cycle=0), ltu, taken
+    )
+    taken = mux(
+        func == cas(domain, m.const(BR_BGEU, width=BR_FUNC_W), cycle=0), ~ltu, taken
+    )
+    taken = mux(
+        func == cas(domain, m.const(BR_JAL, width=BR_FUNC_W), cycle=0), one, taken
+    )
+    taken = mux(
+        func == cas(domain, m.const(BR_JALR, width=BR_FUNC_W), cycle=0), one, taken
+    )
 
     mispredict = valid & (taken ^ predicted)
 
     # Target address
     four = cas(domain, m.const(4, width=addr_w), cycle=0)
     target_branch = (pc + offset).trunc(addr_w)
-    target_jalr   = (src1 + offset).trunc(addr_w)
+    target_jalr = (src1 + offset).trunc(addr_w)
     is_jalr = func == cas(domain, m.const(BR_JALR, width=BR_FUNC_W), cycle=0)
     target = mux(is_jalr, target_jalr, target_branch)
 

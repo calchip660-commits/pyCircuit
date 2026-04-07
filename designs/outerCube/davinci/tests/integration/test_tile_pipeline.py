@@ -18,7 +18,6 @@ sys.path.insert(0, _root)
 from pycircuit import compile_cycle_aware, CycleAwareTb
 from pycircuit.tb import Tb
 
-
 TEST_PROGRAM = """
 Scenario: TILE.LD T10 → TILE.LD T20 → VADD T30, T10, T20 → TILE.ST T30
 
@@ -32,9 +31,20 @@ Pipeline flow:
 def test_mte_rs_compile():
     """MTE RS compiles to valid MLIR."""
     from designs.outerCube.davinci.backend.mte_rs.mte_rs import mte_rs
-    circ = compile_cycle_aware(mte_rs, name="mte_rs", eager=True,
-                                n_entries=4, n_dispatch=2, n_cdb=2, n_tcb=2,
-                                stag_w=3, ttag_w=3, uop_w=4, age_w=3)
+
+    circ = compile_cycle_aware(
+        mte_rs,
+        name="mte_rs",
+        eager=True,
+        n_entries=4,
+        n_dispatch=2,
+        n_cdb=2,
+        n_tcb=2,
+        stag_w=3,
+        ttag_w=3,
+        uop_w=4,
+        age_w=3,
+    )
     mlir = circ.emit_mlir()
     assert "mrs_issue_valid" in mlir
     assert "mrs_issue_op" in mlir
@@ -44,9 +54,18 @@ def test_mte_rs_compile():
 def test_vec_rs_compile():
     """Vec RS compiles to valid MLIR."""
     from designs.outerCube.davinci.backend.vec_rs.vec_rs import vec_rs
-    circ = compile_cycle_aware(vec_rs, name="vec_rs", eager=True,
-                                n_entries=4, n_dispatch=2, n_tcb=2,
-                                n_tile_src=2, ttag_w=4, prefix="vrs")
+
+    circ = compile_cycle_aware(
+        vec_rs,
+        name="vec_rs",
+        eager=True,
+        n_entries=4,
+        n_dispatch=2,
+        n_tcb=2,
+        n_tile_src=2,
+        ttag_w=4,
+        prefix="vrs",
+    )
     mlir = circ.emit_mlir()
     assert "vrs_issue_valid" in mlir
     print(f"PASS: vec_rs compile OK ({len(mlir):,} chars)")
@@ -55,8 +74,16 @@ def test_vec_rs_compile():
 def test_mte_unit_compile():
     """MTE Unit compiles to valid MLIR."""
     from designs.outerCube.davinci.backend.mte_unit.mte_unit import mte_unit
-    circ = compile_cycle_aware(mte_unit, name="mte_unit", eager=True,
-                                ttag_w=3, stag_w=3, data_w=16, prefix="mte")
+
+    circ = compile_cycle_aware(
+        mte_unit,
+        name="mte_unit",
+        eager=True,
+        ttag_w=3,
+        stag_w=3,
+        data_w=16,
+        prefix="mte",
+    )
     mlir = circ.emit_mlir()
     assert "mte_tcb_valid" in mlir
     print(f"PASS: mte_unit compile OK ({len(mlir):,} chars)")
@@ -65,8 +92,10 @@ def test_mte_unit_compile():
 def test_vec_unit_compile():
     """Vector Unit compiles to valid MLIR."""
     from designs.outerCube.davinci.backend.vec_unit.vec_unit import vec_unit
-    circ = compile_cycle_aware(vec_unit, name="vec_unit", eager=True,
-                                ttag_w=3, prefix="vu")
+
+    circ = compile_cycle_aware(
+        vec_unit, name="vec_unit", eager=True, ttag_w=3, prefix="vu"
+    )
     mlir = circ.emit_mlir()
     assert "vu_" in mlir
     print(f"PASS: vec_unit compile OK ({len(mlir):,} chars)")

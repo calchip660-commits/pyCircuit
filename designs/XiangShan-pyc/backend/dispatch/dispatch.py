@@ -17,6 +17,7 @@ Key features:
   B-DP-004  ROB enqueue output for each dispatched uop
   B-DP-005  Flush on redirect: cancel in-flight dispatches
 """
+
 from __future__ import annotations
 
 import sys
@@ -46,14 +47,14 @@ from top.parameters import (
 
 # FU type encoding (3 bits)
 FU_TYPE_WIDTH = 3
-FU_ALU = 0       # Integer ALU
-FU_MUL = 1       # Integer multiply
-FU_DIV = 2       # Integer divide
-FU_BRU = 3       # Branch unit
-FU_FPU = 4       # Floating-point
-FU_FMISC = 5     # FP misc (fmv, fcvt)
-FU_LDU = 6       # Load unit
-FU_STU = 7       # Store unit
+FU_ALU = 0  # Integer ALU
+FU_MUL = 1  # Integer multiply
+FU_DIV = 2  # Integer divide
+FU_BRU = 3  # Branch unit
+FU_FPU = 4  # Floating-point
+FU_FMISC = 5  # FP misc (fmv, fcvt)
+FU_LDU = 6  # Load unit
+FU_STU = 7  # Store unit
 
 # IQ class encoding (2 bits)
 IQ_CLASS_WIDTH = 2
@@ -78,7 +79,6 @@ def dispatch(
     _in = inputs or {}
     _out: dict[str, CycleAwareSignal] = {}
 
-
     iq_class_w = IQ_CLASS_WIDTH
     dp_cnt_w = max(1, dispatch_width.bit_length())
 
@@ -86,35 +86,62 @@ def dispatch(
     # Cycle 0 — Receive renamed uops, classify, check availability
     # ================================================================
 
-    flush = (_in["flush"] if "flush" in _in else
-
-        cas(domain, m.input(f"{prefix}_flush", width=1), cycle=0))
+    flush = (
+        _in["flush"]
+        if "flush" in _in
+        else cas(domain, m.input(f"{prefix}_flush", width=1), cycle=0)
+    )
 
     # Renamed uop inputs (from rename stage)
-    in_valid = [cas(domain, m.input(f"{prefix}_in_valid_{i}", width=1), cycle=0)
-                for i in range(dispatch_width)]
-    in_pdest = [cas(domain, m.input(f"{prefix}_in_pdest_{i}", width=ptag_w), cycle=0)
-                for i in range(dispatch_width)]
-    in_psrc1 = [cas(domain, m.input(f"{prefix}_in_psrc1_{i}", width=ptag_w), cycle=0)
-                for i in range(dispatch_width)]
-    in_psrc2 = [cas(domain, m.input(f"{prefix}_in_psrc2_{i}", width=ptag_w), cycle=0)
-                for i in range(dispatch_width)]
-    in_old_pdest = [cas(domain, m.input(f"{prefix}_in_old_pdest_{i}", width=ptag_w), cycle=0)
-                    for i in range(dispatch_width)]
-    in_fu_type = [cas(domain, m.input(f"{prefix}_in_fu_type_{i}", width=fu_type_width), cycle=0)
-                  for i in range(dispatch_width)]
-    in_rob_idx = [cas(domain, m.input(f"{prefix}_in_rob_idx_{i}", width=rob_idx_w), cycle=0)
-                  for i in range(dispatch_width)]
-    in_pc = [cas(domain, m.input(f"{prefix}_in_pc_{i}", width=pc_width), cycle=0)
-             for i in range(dispatch_width)]
+    in_valid = [
+        cas(domain, m.input(f"{prefix}_in_valid_{i}", width=1), cycle=0)
+        for i in range(dispatch_width)
+    ]
+    in_pdest = [
+        cas(domain, m.input(f"{prefix}_in_pdest_{i}", width=ptag_w), cycle=0)
+        for i in range(dispatch_width)
+    ]
+    in_psrc1 = [
+        cas(domain, m.input(f"{prefix}_in_psrc1_{i}", width=ptag_w), cycle=0)
+        for i in range(dispatch_width)
+    ]
+    in_psrc2 = [
+        cas(domain, m.input(f"{prefix}_in_psrc2_{i}", width=ptag_w), cycle=0)
+        for i in range(dispatch_width)
+    ]
+    in_old_pdest = [
+        cas(domain, m.input(f"{prefix}_in_old_pdest_{i}", width=ptag_w), cycle=0)
+        for i in range(dispatch_width)
+    ]
+    in_fu_type = [
+        cas(domain, m.input(f"{prefix}_in_fu_type_{i}", width=fu_type_width), cycle=0)
+        for i in range(dispatch_width)
+    ]
+    in_rob_idx = [
+        cas(domain, m.input(f"{prefix}_in_rob_idx_{i}", width=rob_idx_w), cycle=0)
+        for i in range(dispatch_width)
+    ]
+    in_pc = [
+        cas(domain, m.input(f"{prefix}_in_pc_{i}", width=pc_width), cycle=0)
+        for i in range(dispatch_width)
+    ]
 
     # Issue queue ready signals (backpressure)
-    iq_int_ready = (_in["iq_int_ready"] if "iq_int_ready" in _in else
-        cas(domain, m.input(f"{prefix}_iq_int_ready", width=1), cycle=0))
-    iq_fp_ready = (_in["iq_fp_ready"] if "iq_fp_ready" in _in else
-        cas(domain, m.input(f"{prefix}_iq_fp_ready", width=1), cycle=0))
-    iq_mem_ready = (_in["iq_mem_ready"] if "iq_mem_ready" in _in else
-        cas(domain, m.input(f"{prefix}_iq_mem_ready", width=1), cycle=0))
+    iq_int_ready = (
+        _in["iq_int_ready"]
+        if "iq_int_ready" in _in
+        else cas(domain, m.input(f"{prefix}_iq_int_ready", width=1), cycle=0)
+    )
+    iq_fp_ready = (
+        _in["iq_fp_ready"]
+        if "iq_fp_ready" in _in
+        else cas(domain, m.input(f"{prefix}_iq_fp_ready", width=1), cycle=0)
+    )
+    iq_mem_ready = (
+        _in["iq_mem_ready"]
+        if "iq_mem_ready" in _in
+        else cas(domain, m.input(f"{prefix}_iq_mem_ready", width=1), cycle=0)
+    )
 
     # ── Constants ────────────────────────────────────────────────
     ZERO_1 = cas(domain, m.const(0, width=1), cycle=0)
@@ -207,15 +234,21 @@ def dispatch(
 
     for i in range(dispatch_width):
         slot_fire = in_valid[i] & dispatch_fire
-        int_cnt = mux(slot_fire & is_int[i],
-                      cas(domain, (wire_of(int_cnt) + wire_of(ONE_DP))[0:dp_cnt_w], cycle=0),
-                      int_cnt)
-        fp_cnt = mux(slot_fire & is_fp[i],
-                     cas(domain, (wire_of(fp_cnt) + wire_of(ONE_DP))[0:dp_cnt_w], cycle=0),
-                     fp_cnt)
-        mem_cnt = mux(slot_fire & is_mem[i],
-                      cas(domain, (wire_of(mem_cnt) + wire_of(ONE_DP))[0:dp_cnt_w], cycle=0),
-                      mem_cnt)
+        int_cnt = mux(
+            slot_fire & is_int[i],
+            cas(domain, (wire_of(int_cnt) + wire_of(ONE_DP))[0:dp_cnt_w], cycle=0),
+            int_cnt,
+        )
+        fp_cnt = mux(
+            slot_fire & is_fp[i],
+            cas(domain, (wire_of(fp_cnt) + wire_of(ONE_DP))[0:dp_cnt_w], cycle=0),
+            fp_cnt,
+        )
+        mem_cnt = mux(
+            slot_fire & is_mem[i],
+            cas(domain, (wire_of(mem_cnt) + wire_of(ONE_DP))[0:dp_cnt_w], cycle=0),
+            mem_cnt,
+        )
 
     m.output(f"{prefix}_int_dispatch_count", wire_of(int_cnt))
     _out["int_dispatch_count"] = int_cnt
@@ -243,8 +276,15 @@ dispatch.__pycircuit_name__ = "dispatch"
 
 
 if __name__ == "__main__":
-    print(compile_cycle_aware(
-        dispatch, name="dispatch", eager=True,
-        dispatch_width=2, fu_type_width=3,
-        ptag_w=4, pc_width=16, rob_idx_w=4,
-    ).emit_mlir())
+    print(
+        compile_cycle_aware(
+            dispatch,
+            name="dispatch",
+            eager=True,
+            dispatch_width=2,
+            fu_type_width=3,
+            ptag_w=4,
+            pc_width=16,
+            rob_idx_w=4,
+        ).emit_mlir()
+    )

@@ -386,4 +386,3 @@ assign muldiv_result_tag = pyc_comb_72;
 assign muldiv_result_data = pyc_comb_73;
 
 endmodule
-

@@ -99,4 +99,3 @@ assign fetch_ipc2 = pyc_comb_27;
 assign fetch_ipc3 = pyc_comb_28;
 
 endmodule
-

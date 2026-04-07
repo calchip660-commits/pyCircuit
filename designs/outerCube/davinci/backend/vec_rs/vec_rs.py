@@ -37,7 +37,6 @@ def _in(io, key, m, domain, prefix, width):
     return cas(domain, m.input(f"{prefix}_{key}", width=width), cycle=0)
 
 
-
 def vec_rs(
     m: CycleAwareCircuit,
     domain: CycleAwareDomain,
@@ -57,29 +56,66 @@ def vec_rs(
     outs: dict = {}
 
     # ── Cycle 0: Dispatch ────────────────────────────────────────────
-    disp_valid = [_in(inputs, f"dv{i}", m, domain, prefix, 1) for i in range(n_dispatch)]
-    disp_op    = [_in(inputs, f"dop{i}", m, domain, prefix, uop_w) for i in range(n_dispatch)]
-    disp_ptsrc = [[_in(inputs, f"dts{s}_{i}", m, domain, prefix, ttag_w)
-                   for i in range(n_dispatch)] for s in range(n_tile_src)]
-    disp_trdy  = [[_in(inputs, f"dtr{s}_{i}", m, domain, prefix, 1)
-                   for i in range(n_dispatch)] for s in range(n_tile_src)]
-    disp_ptdst = [_in(inputs, f"dtd{i}", m, domain, prefix, ttag_w) for i in range(n_dispatch)]
+    disp_valid = [
+        _in(inputs, f"dv{i}", m, domain, prefix, 1) for i in range(n_dispatch)
+    ]
+    disp_op = [
+        _in(inputs, f"dop{i}", m, domain, prefix, uop_w) for i in range(n_dispatch)
+    ]
+    disp_ptsrc = [
+        [
+            _in(inputs, f"dts{s}_{i}", m, domain, prefix, ttag_w)
+            for i in range(n_dispatch)
+        ]
+        for s in range(n_tile_src)
+    ]
+    disp_trdy = [
+        [_in(inputs, f"dtr{s}_{i}", m, domain, prefix, 1) for i in range(n_dispatch)]
+        for s in range(n_tile_src)
+    ]
+    disp_ptdst = [
+        _in(inputs, f"dtd{i}", m, domain, prefix, ttag_w) for i in range(n_dispatch)
+    ]
 
     # TCB broadcast
     tcb_valid = [_in(inputs, f"tcb_v{i}", m, domain, prefix, 1) for i in range(n_tcb)]
-    tcb_tag   = [_in(inputs, f"tcb_t{i}", m, domain, prefix, ttag_w) for i in range(n_tcb)]
+    tcb_tag = [
+        _in(inputs, f"tcb_t{i}", m, domain, prefix, ttag_w) for i in range(n_tcb)
+    ]
 
     flush = _in(inputs, "flush", m, domain, prefix, 1)
 
     # ── State ────────────────────────────────────────────────────────
-    valid  = [domain.signal(width=1, reset_value=0, name=f"{prefix}_v_{e}") for e in range(n_entries)]
-    op     = [domain.signal(width=uop_w, reset_value=0, name=f"{prefix}_op_{e}") for e in range(n_entries)]
-    age    = [domain.signal(width=age_w, reset_value=0, name=f"{prefix}_ag_{e}") for e in range(n_entries)]
-    ptsrc  = [[domain.signal(width=ttag_w, reset_value=0, name=f"{prefix}_ts{s}_{e}")
-               for e in range(n_entries)] for s in range(n_tile_src)]
-    trdy   = [[domain.signal(width=1, reset_value=0, name=f"{prefix}_tr{s}_{e}")
-               for e in range(n_entries)] for s in range(n_tile_src)]
-    ptdst  = [domain.signal(width=ttag_w, reset_value=0, name=f"{prefix}_td_{e}") for e in range(n_entries)]
+    valid = [
+        domain.signal(width=1, reset_value=0, name=f"{prefix}_v_{e}")
+        for e in range(n_entries)
+    ]
+    op = [
+        domain.signal(width=uop_w, reset_value=0, name=f"{prefix}_op_{e}")
+        for e in range(n_entries)
+    ]
+    age = [
+        domain.signal(width=age_w, reset_value=0, name=f"{prefix}_ag_{e}")
+        for e in range(n_entries)
+    ]
+    ptsrc = [
+        [
+            domain.signal(width=ttag_w, reset_value=0, name=f"{prefix}_ts{s}_{e}")
+            for e in range(n_entries)
+        ]
+        for s in range(n_tile_src)
+    ]
+    trdy = [
+        [
+            domain.signal(width=1, reset_value=0, name=f"{prefix}_tr{s}_{e}")
+            for e in range(n_entries)
+        ]
+        for s in range(n_tile_src)
+    ]
+    ptdst = [
+        domain.signal(width=ttag_w, reset_value=0, name=f"{prefix}_td_{e}")
+        for e in range(n_entries)
+    ]
 
     age_ctr = domain.signal(width=age_w, reset_value=0, name=f"{prefix}_ac")
 
@@ -106,8 +142,8 @@ def vec_rs(
         is_older = age[e] < best_age
         wins = is_ready & (is_older | (~best_valid))
         best_valid = mux(wins, cas(domain, m.const(1, width=1), cycle=0), best_valid)
-        best_idx   = mux(wins, cas(domain, m.const(e, width=eidx_w), cycle=0), best_idx)
-        best_age   = mux(wins, age[e], best_age)
+        best_idx = mux(wins, cas(domain, m.const(e, width=eidx_w), cycle=0), best_idx)
+        best_age = mux(wins, age[e], best_age)
 
     outs["issue_valid"] = best_valid
     outs["issue_idx"] = best_idx
@@ -130,7 +166,9 @@ def vec_rs(
     n_v = cas(domain, m.const(0, width=eidx_w + 1), cycle=0)
     for e in range(n_entries):
         n_v = n_v + valid[e]
-    outs["full"] = n_v >= cas(domain, m.const(n_entries - n_dispatch, width=eidx_w + 1), cycle=0)
+    outs["full"] = n_v >= cas(
+        domain, m.const(n_entries - n_dispatch, width=eidx_w + 1), cycle=0
+    )
 
     if inputs is None:
         for k in outs:
@@ -170,6 +208,16 @@ vec_rs.__pycircuit_name__ = "vec_rs"
 
 
 if __name__ == "__main__":
-    print(compile_cycle_aware(vec_rs, name="vec_rs", eager=True,
-                               n_entries=4, n_dispatch=2, n_tcb=2, n_tile_src=2,
-                               ttag_w=4, prefix="vrs").emit_mlir())
+    print(
+        compile_cycle_aware(
+            vec_rs,
+            name="vec_rs",
+            eager=True,
+            n_entries=4,
+            n_dispatch=2,
+            n_tcb=2,
+            n_tile_src=2,
+            ttag_w=4,
+            prefix="vrs",
+        ).emit_mlir()
+    )

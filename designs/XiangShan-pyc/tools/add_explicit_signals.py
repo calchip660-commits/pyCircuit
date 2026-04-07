@@ -11,6 +11,7 @@ Transforms each build_* to:
 
 Usage: python tools/add_explicit_signals.py [--dry-run] [--file path]
 """
+
 from __future__ import annotations
 
 import argparse
@@ -76,12 +77,16 @@ def transform_file(filepath: Path, func_name: str, *, dry_run: bool = False) -> 
         return stats
 
     if dry_run:
-        print(f"  DRY  {filepath.relative_to(XS_ROOT)}/{func_name}: {sum(stats.values())} changes")
+        print(
+            f"  DRY  {filepath.relative_to(XS_ROOT)}/{func_name}: {sum(stats.values())} changes"
+        )
     else:
         filepath.write_text(text)
-        print(f"  WRITE {filepath.relative_to(XS_ROOT)}/{func_name}: "
-              f"sig={stats['sig']} init={stats['init']} in={stats['input']} "
-              f"out={stats['output']} ret={stats['ret']}")
+        print(
+            f"  WRITE {filepath.relative_to(XS_ROOT)}/{func_name}: "
+            f"sig={stats['sig']} init={stats['init']} in={stats['input']} "
+            f"out={stats['output']} ret={stats['ret']}"
+        )
 
     return stats
 
@@ -155,8 +160,8 @@ def _transform_function(text: str, func_name: str, stats: dict) -> str:
     if "_in = inputs or {}" not in body:
         indent = "    "
         init_block = (
-            f'{indent}_in = inputs or {{}}\n'
-            f'{indent}_out: dict[str, CycleAwareSignal] = {{}}\n\n'
+            f"{indent}_in = inputs or {{}}\n"
+            f"{indent}_out: dict[str, CycleAwareSignal] = {{}}\n\n"
         )
         body = init_block + body
         stats["init"] += 1
@@ -195,7 +200,7 @@ def _add_inputs_param(sig: str, func_name: str) -> tuple[str, bool]:
             # Find proper indentation
             last_nl = sig.rfind("\n", 0, close_paren)
             if last_nl > 0:
-                indent_match = re.match(r"(\s+)", sig[last_nl + 1:])
+                indent_match = re.match(r"(\s+)", sig[last_nl + 1 :])
                 indent = indent_match.group(1) if indent_match else "    "
             else:
                 indent = "    "
@@ -230,8 +235,10 @@ def _transform_inputs(body: str) -> tuple[str, int]:
         width = match.group(4)
         cycle = match.group(5)
         count += 1
-        return (f'{indent}{var} = (_in["{name}"] if "{name}" in _in else\n'
-                f'{indent}    cas(domain, m.input(f"{{prefix}}_{name}", width={width}), cycle={cycle}))')
+        return (
+            f'{indent}{var} = (_in["{name}"] if "{name}" in _in else\n'
+            f'{indent}    cas(domain, m.input(f"{{prefix}}_{name}", width={width}), cycle={cycle}))'
+        )
 
     body = pattern.sub(replacer, body)
     return body, count
@@ -245,13 +252,9 @@ def _transform_outputs(body: str) -> tuple[str, int]:
     new_lines = []
 
     # Pattern 1: m.output(f"{prefix}_NAME", wire_of(VAR))
-    pat_wire = re.compile(
-        r'^(\s+)m\.output\(f"\{prefix\}_(\w+)",\s*wire_of\((\w+)\)\)'
-    )
+    pat_wire = re.compile(r'^(\s+)m\.output\(f"\{prefix\}_(\w+)",\s*wire_of\((\w+)\)\)')
     # Pattern 2: m.output(f"{prefix}_NAME", EXPR) where EXPR doesn't use wire_of
-    pat_raw = re.compile(
-        r'^(\s+)m\.output\(f"\{prefix\}_(\w+)",\s*(\w+)\)'
-    )
+    pat_raw = re.compile(r'^(\s+)m\.output\(f"\{prefix\}_(\w+)",\s*(\w+)\)')
 
     for line in lines:
         new_lines.append(line)
@@ -271,7 +274,9 @@ def _transform_outputs(body: str) -> tuple[str, int]:
             name = m2.group(2)
             raw_var = m2.group(3)
             # Wrap raw wire in cas at current cycle
-            new_lines.append(f'{indent}_out["{name}"] = cas(domain, {raw_var}, cycle=domain.cycle_index)')
+            new_lines.append(
+                f'{indent}_out["{name}"] = cas(domain, {raw_var}, cycle=domain.cycle_index)'
+            )
             count += 1
 
     return "\n".join(new_lines), count

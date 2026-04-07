@@ -15,6 +15,7 @@ from pycircuit.tb import Tb
 
 def fl_test(m, domain) -> None:
     from designs.outerCube.davinci.common.free_list import free_list
+
     free_list(m, domain, depth=8, tag_w=4, deq_width=2, enq_width=2, prefix="fl")
 
 

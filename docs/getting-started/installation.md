@@ -1,66 +1,255 @@
 # Installation Guide
 
-This guide covers setting up the pyCircuit development environment.
+This guide covers the supported ways to install and verify pyCircuit
+(`pyc4.0` / `pyc0.40`). The most common developer setup is:
 
-## System Requirements
+1. install Python + LLVM/MLIR 19 + build tools
+2. build the staged toolchain with `bash flows/scripts/pyc build`
+3. install the Python frontend with `python3 -m pip install -e ".[dev]"`
+4. run the smoke gates
 
-| Component | Minimum Version | Recommended Version |
-|-----------|---------------|---------------------|
-| Python | 3.10 | 3.14 |
-| LLVM | 19 | 19 |
-| CMake | 3.20 | 3.28+ |
-| Ninja | 1.10 | Latest |
+If you do not want to build LLVM-backed tools locally, install the published
+wheel instead.
+
+## Choose an Installation Path
+
+| Path | Best for | Installs |
+| --- | --- | --- |
+| Full source developer setup | Contributors and local backend/frontend development | `pycc`, runtime, editable Python package |
+| Editable frontend-only install | Frontend work when you already have a toolchain | Editable Python package only |
+| Published or local wheel | Fastest way to use pyCircuit without a local LLVM build | Python package plus bundled toolchain |
+
+## Supported Tool Versions
+
+| Component | Version | Notes |
+| --- | --- | --- |
+| Python | 3.10+ | Package metadata supports 3.10 and newer |
+| LLVM / MLIR | 19 | The repo build scripts expect LLVM 19 |
+| CMake | 3.20+ | Required by the top-level CMake project |
+| Ninja | 1.10+ | Used by the build scripts and CI |
+| C/C++ compiler | Clang, GCC, or AppleClang | Platform default is fine in most cases |
+
+Optional tools:
+
+- `verilator` for `bash flows/scripts/run_sims.sh`
+- `iverilog` for broader simulation flows used in CI on Linux
+
+Current CI validates Linux and macOS source builds. The commands below focus on
+Ubuntu/Debian and macOS because those are the best-covered setups in this repo.
+
+## Clone the Repository
+
+```bash
+git clone https://github.com/LinxISA/pyCircuit.git
+cd pyCircuit
+```
 
 ## Install System Dependencies
 
 ### Ubuntu/Debian
 
 ```bash
-# Update package lists
 sudo apt-get update
+sudo apt-get install -y \
+  wget gnupg software-properties-common \
+  cmake ninja-build clang \
+  python3 python3-pip python3-venv
 
-# Install build tools
-sudo apt-get install -y cmake ninja-build python3 python3-pip clang wget
-
-# Install LLVM/MLIR 19 (Ubuntu 22.04+)
+# Install LLVM/MLIR 19
 wget https://apt.llvm.org/llvm.sh
 chmod +x llvm.sh
 sudo ./llvm.sh 19
 sudo apt-get install -y llvm-19-dev mlir-19-tools libmlir-19-dev
 
-# Verify installation
+# Optional simulation tools
+sudo apt-get install -y verilator iverilog
+
+# Make the LLVM tools visible in the current shell
+export PATH="/usr/lib/llvm-19/bin:$PATH"
+
+# Verify the toolchain
 llvm-config-19 --version
 mlir-opt --version
 ```
 
+If you do not want to modify `PATH`, you can still build pyCircuit by passing
+`--llvm-config /usr/lib/llvm-19/bin/llvm-config` to `flows/scripts/pyc build`.
+
 ### macOS
 
 ```bash
-# Install Homebrew if not already installed
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+# Install Homebrew first if it is not already present:
+# /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 
-# Install build tools
-brew install cmake ninja python@3
+brew update
+brew install cmake ninja llvm@19 python@3
 
-# Install LLVM 19 with MLIR
-brew install llvm@19
-# Add LLVM to PATH
-echo 'export PATH="$(brew --prefix llvm@19)/bin:$PATH"' >> ~/.zshrc
-source ~/.zshrc
+# Optional simulation tool
+brew install verilator
 
-# Verify installation
+export PATH="$(brew --prefix llvm@19)/bin:$PATH"
+
 llvm-config --version
+mlir-opt --version
 ```
 
-## Clone and Build
+## Full Source Developer Setup
+
+This is the recommended path if you want to contribute to pyCircuit or build the
+backend locally.
+
+### 1) Create a Python environment
 
 ```bash
-# Clone the repository
-git clone https://github.com/LinxISA/pyCircuit.git
-cd pyCircuit
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+```
 
-# Configure with CMake
-LLVM_DIR="$(llvm-config-19 --cmakedir)"
+### 2) Build the staged toolchain
+
+The repo's canonical build entrypoint is `flows/scripts/pyc build`:
+
+```bash
+bash flows/scripts/pyc build
+```
+
+This stages the install tree under:
+
+```text
+.pycircuit_out/toolchain/install
+```
+
+If LLVM auto-detection does not work, pass `llvm-config` explicitly:
+
+```bash
+bash flows/scripts/pyc build \
+  --llvm-config /usr/lib/llvm-19/bin/llvm-config
+```
+
+On macOS:
+
+```bash
+bash flows/scripts/pyc build \
+  --llvm-config "$(brew --prefix llvm@19)/bin/llvm-config"
+```
+
+### 3) Install the Python package
+
+For contributor workflows, install the editable package with development tools:
+
+```bash
+python -m pip install -e ".[dev]"
+```
+
+If you only want the runtime frontend package and not the dev extras:
+
+```bash
+python -m pip install -e .
+```
+
+### 4) Export the toolchain location
+
+Editable installs do not put the locally built `pycc` on your global `PATH`.
+Point the frontend at the staged toolchain:
+
+```bash
+export PYC_TOOLCHAIN_ROOT="$PWD/.pycircuit_out/toolchain/install"
+export PATH="$PYC_TOOLCHAIN_ROOT/bin:$PATH"
+```
+
+### 5) Verify the install
+
+```bash
+pycc --version
+python -m pycircuit.cli --help
+```
+
+## Editable Frontend-Only Install
+
+Use this when you only need the Python frontend and already have a valid pyc
+toolchain from either:
+
+- `bash flows/scripts/pyc build`
+- a previous staged install tree
+- an installed wheel
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -e .
+```
+
+Then point pyCircuit at an existing toolchain:
+
+```bash
+export PYC_TOOLCHAIN_ROOT=/path/to/pyc-toolchain-install
+python -m pycircuit.cli --help
+```
+
+If `PYC_TOOLCHAIN_ROOT` is not set and `pycc` is not discoverable, frontend
+commands that require compilation will fail with a missing-toolchain error.
+
+## Install a Published or Local Wheel
+
+Use this path if you want a working `pycc` without building LLVM-backed tools
+from source.
+
+### Install from PyPI
+
+```bash
+python3 -m pip install pycircuit-hisi
+```
+
+### Install a local wheel artifact
+
+```bash
+python3 -m pip install /path/to/pycircuit_hisi-<version>-py3-none-<platform>.whl
+```
+
+Verify the installed commands:
+
+```bash
+pycc --version
+python3 -m pycircuit.cli --help
+```
+
+The distribution name is `pycircuit-hisi` to avoid the unrelated `pycircuit`
+package on PyPI. The Python import path remains `pycircuit`.
+
+The wheel is platform-specific because it bundles the matching toolchain. Use a
+wheel built for your OS and architecture.
+
+## Using Repo Smoke Scripts with an Installed Wheel
+
+If you want to run this repository's smoke scripts against an installed wheel,
+point the scripts at the bundled toolchain and tell them to use the installed
+Python package rather than the repo source tree:
+
+```bash
+export PYC_TOOLCHAIN_ROOT="$(python -c 'import pycircuit, pathlib; print((pathlib.Path(pycircuit.__file__).resolve().parent / "_toolchain").as_posix())')"
+export PYC_USE_INSTALLED_PYTHON_PACKAGE=1
+unset PYCC
+```
+
+Then run:
+
+```bash
+bash flows/scripts/run_examples.sh
+```
+
+## Advanced: Manual CMake Build
+
+Most users should prefer `bash flows/scripts/pyc build`, but you can also build
+the toolchain manually:
+
+```bash
+LLVM_CONFIG_BIN="${LLVM_CONFIG_BIN:-llvm-config-19}"
+# On macOS, you can set:
+# LLVM_CONFIG_BIN="$(brew --prefix llvm@19)/bin/llvm-config"
+
+LLVM_DIR="$("${LLVM_CONFIG_BIN}" --cmakedir)"
 MLIR_DIR="$(dirname "$LLVM_DIR")/mlir"
 
 cmake -G Ninja -S . -B .pycircuit_out/toolchain/build \
@@ -69,109 +258,101 @@ cmake -G Ninja -S . -B .pycircuit_out/toolchain/build \
   -DLLVM_DIR="$LLVM_DIR" \
   -DMLIR_DIR="$MLIR_DIR"
 
-# Build and stage the compiler toolchain
-ninja -C .pycircuit_out/toolchain/build pycc pyc-opt pyc4_runtime
+ninja -C .pycircuit_out/toolchain/build pycc pyc4_runtime
+ninja -C .pycircuit_out/toolchain/build pyc-opt || true
 cmake --install .pycircuit_out/toolchain/build --prefix "$PWD/.pycircuit_out/toolchain/install"
-
-# Verify the build
-./.pycircuit_out/toolchain/install/bin/pycc --version
 ```
 
-## Alternative: Use Build Script
-
-```bash
-# The project includes a build script that handles LLVM detection
-bash flows/scripts/pyc build
-```
-
-## Alternative: Install a Release Wheel
-
-```bash
-python3 -m pip install /path/to/pycircuit_hisi-<version>-py3-none-<platform>.whl
-
-# The wheel ships the matching toolchain inside site-packages.
-pycc --version
-python3 -m pycircuit.cli --help
-```
-
-The wheel is platform-specific because it embeds `pycc`, the runtime archive,
-and the required LLVM/MLIR shared libraries. Use the wheel that matches your
-OS and architecture. A single wheel now covers Python 3.10+ on that platform.
-
-Published package install command:
-
-```bash
-python3 -m pip install pycircuit-hisi
-```
-
-The distribution name is `pycircuit-hisi` to avoid the existing unrelated
-`pycircuit` package on PyPI. The import path remains `pycircuit`, and the CLI
-entrypoints remain `pycircuit`, `pycc`, and `pyc-opt`.
-
-## Install Python Package
-
-```bash
-# Install the frontend package in development mode
-python3 -m pip install -e .
-
-# Verify installation
-python3 -c "import pycircuit; print(pycircuit.__version__)"
-```
-
-Editable install is frontend-only. It does not provide `pycc` on `PATH`; build
-the toolchain with `bash flows/scripts/pyc build` and export
-`PYC_TOOLCHAIN_ROOT="$PWD/.pycircuit_out/toolchain/install"`, or install a
-release wheel instead.
+`pyc-opt` is built on a best-effort basis. Some LLVM/MLIR package layouts do
+not provide everything needed for that binary, but `pycc` and the runtime are
+the required pieces for normal pyCircuit usage.
 
 ## Verify Your Setup
 
-```bash
-# Run the smoke test
-bash flows/scripts/run_examples.sh
+### Compile smoke
 
-# Should output something like:
-# Compiling counter... OK
-# Compiling calculator... OK
-# Compiling fifo_loopback... OK
+```bash
+bash flows/scripts/run_examples.sh
 ```
+
+This is the fastest repo-level verification step and is the default smoke gate
+used throughout the docs and CI.
+
+### Simulation smoke
+
+```bash
+bash flows/scripts/run_sims.sh
+```
+
+Run this after installing simulation dependencies. It exercises the
+`@testbench` flow, C++ execution, and Verilator-backed simulation.
+
+### Manual single-design build
+
+```bash
+PYTHONPATH=compiler/frontend \
+PYC_TOOLCHAIN_ROOT=.pycircuit_out/toolchain/install \
+python3 -m pycircuit.cli build \
+  designs/examples/counter/tb_counter.py \
+  --out-dir /tmp/pyc_counter \
+  --target both \
+  --jobs 8
+```
+
+## Common Environment Variables
+
+| Variable | Purpose |
+| --- | --- |
+| `PYC_TOOLCHAIN_ROOT` | Points pyCircuit at a staged or bundled install tree containing `bin/pycc`, runtime libs, and CMake metadata |
+| `PYCC` | Explicit path to the `pycc` executable if you do not want auto-detection |
+| `LLVM_CONFIG` | Optional override consumed by `flows/scripts/pyc build` |
+| `LLVM_DIR` / `MLIR_DIR` | Explicit CMake package locations for manual or scripted builds |
+| `PYC_USE_INSTALLED_PYTHON_PACKAGE=1` | Tells repo scripts to use the installed wheel package instead of repo-local frontend sources |
 
 ## Troubleshooting
 
-### LLVM Not Found
+### `flows/scripts/pyc build` cannot find LLVM or MLIR
 
-If CMake can't find LLVM, set the paths explicitly:
-
-```bash
-export LLVM_DIR=/path/to/llvm/lib/cmake/llvm
-export MLIR_DIR=/path/to/mlir/lib/cmake/mlir
-cmake -G Ninja -S . -B .pycircuit_out/toolchain/build ...
-```
-
-### Python Version Issues
-
-pyCircuit requires Python 3.10+. Check your version:
+Provide `llvm-config` directly:
 
 ```bash
-python3 --version
+bash flows/scripts/pyc build \
+  --llvm-config /usr/lib/llvm-19/bin/llvm-config
 ```
 
-If you need to install a newer Python version:
+Or set the CMake package locations yourself:
 
 ```bash
-# Ubuntu
-sudo apt-get install python3.11 python3.11-venv
-
-# macOS
-brew install python@3.11
+export LLVM_DIR=/path/to/lib/cmake/llvm
+export MLIR_DIR=/path/to/lib/cmake/mlir
+bash flows/scripts/pyc build
 ```
 
-### Build Errors
+### `mlir-opt` is installed but not found on Ubuntu
 
-Clean and rebuild:
+The Debian/Ubuntu LLVM packages install MLIR tools under a versioned prefix.
+Add them to `PATH`:
+
+```bash
+export PATH="/usr/lib/llvm-19/bin:$PATH"
+```
+
+### `pycc` is missing after `pip install -e .`
+
+That is expected. Editable installs only provide the Python frontend. Either:
+
+- build the toolchain with `bash flows/scripts/pyc build`, then export
+  `PYC_TOOLCHAIN_ROOT="$PWD/.pycircuit_out/toolchain/install"`
+- or install a wheel with `python3 -m pip install pycircuit-hisi`
+
+### `pyc-opt` failed to build
+
+`pyc-opt` is optional in the current build flow. If `pycc` builds and the smoke
+gates pass, you can continue working.
+
+### Start from a clean build
 
 ```bash
 rm -rf .pycircuit_out/toolchain
-cmake -G Ninja -S . -B .pycircuit_out/toolchain/build ...
-ninja -C .pycircuit_out/toolchain/build clean
-ninja -C .pycircuit_out/toolchain/build pycc
+bash flows/scripts/pyc build
 ```
